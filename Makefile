@@ -4,7 +4,7 @@
 VENV      := .venv-infra
 ANSIBLE   := ANSIBLE_CONFIG=ansible/ansible.cfg $(VENV)/bin/ansible-playbook -i local/inventory.ini $(if $(wildcard local/vars.yml),-e @local/vars.yml) $(if $(HTTP_PORT),-e gateway_http_port=$(HTTP_PORT)) $(if $(HTTPS_PORT),-e gateway_https_port=$(HTTPS_PORT))
 
-.PHONY: quadlet-dryrun deploy-check help hooks ansible-setup syntax check test secrets-scan render deploy status backup-caddy-data root-cert smoke bootstrap-ports cutover rollback-legacy
+.PHONY: restore-drill restore-caddy-data quadlet-dryrun deploy-check help hooks ansible-setup syntax check test secrets-scan render deploy status backup-caddy-data root-cert smoke bootstrap-ports cutover rollback-legacy
 
 help:  ## Show this list
 	@grep -E '^[a-z-]+:.*##' $(MAKEFILE_LIST) | sed 's/:.*## /\t/'
@@ -20,7 +20,7 @@ secrets-scan:  ## Scan the whole git history and working tree for secrets
 	gitleaks dir --redact --verbose .
 
 syntax:  ## Check that every playbook is well-formed; changes nothing
-	for p in deploy backup-caddy-data status root-cert bootstrap-ports cutover rollback-legacy render; do \
+	for p in deploy backup-caddy-data status root-cert restore-caddy-data bootstrap-ports cutover rollback-legacy render; do \
 	  ANSIBLE_CONFIG=ansible/ansible.cfg $(VENV)/bin/ansible-playbook -i local/inventory.example.ini --syntax-check ansible/$$p.yml || exit 1; done
 
 test:  ## Run the tests on the real rendered files (needs a local caddy: brew install caddy)
@@ -61,3 +61,12 @@ rollback-legacy:  ## [SUDO] Put the legacy Caddy back and stop the new one
 
 quadlet-dryrun:  ## Ask the server's Quadlet generator to translate our unit files (prints only)
 	scripts/quadlet-dryrun.sh
+
+restore-drill:  ## Prove a backup is usable: unpack it into a throw-away folder and compare certificates. make restore-drill BACKUP=caddy-data-....tar.gz
+	@test -n "$(BACKUP)" || { echo "Give BACKUP=<name>; list them with: ssh <service user>@<server> ls ~/cornil-gateway/backups"; exit 1; }
+	$(ANSIBLE) ansible/restore-caddy-data.yml -e drill=true -e backup=$(BACKUP)
+
+restore-caddy-data:  ## Replace the live CA data with a backup (asks you to type RESTORE). make restore-caddy-data BACKUP=...
+	@test -n "$(BACKUP)" || { echo "Give BACKUP=<name>"; exit 1; }
+	@printf 'This replaces the live Caddy CA data with %s. Type RESTORE to continue: ' "$(BACKUP)"; read a; test "$$a" = RESTORE
+	$(ANSIBLE) ansible/restore-caddy-data.yml -e drill=false -e confirm=RESTORE -e backup=$(BACKUP)

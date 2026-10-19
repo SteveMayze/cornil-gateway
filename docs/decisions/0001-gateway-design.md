@@ -20,7 +20,7 @@ Two Django apps must be served under `https://cornil.fritz.box/parts-db` and `/t
 9. **Ports 80 and 443:** set `net.ipv4.ip_unprivileged_port_start=80` once via a labelled sudo bootstrap step. Alternatives rejected: rootful Caddy (breaks no-sudo deploys), high ports plus forwarding (needs a firewall that does not exist).
 10. **Cut-over:** G2 runs the new Caddy beside the old one on temporary ports 8080 and 8443. A separate sudo step backs up and stops the legacy `caddy.service` and then starts the new Caddy on 80 and 443. The legacy package and its files are not removed.
 11. **Data directory:** `~/cornil-gateway/caddy-data` (0700, contains the CA private key); backups stay on the server or on the owner's own storage, never in the repo.
-12. **CA:** the new Caddy currently has a fresh CA. The owner has the January 2026 certificate on devices; whether to keep the fresh CA or adopt the old one is open (design Q5).
+12. **CA:** the new Caddy currently has a fresh CA. The owner has the January 2026 certificate on devices; the fresh CA is kept and devices install the new certificate (design Q5, settled by default 2026-10-19). Old January 2026 certificates are removed from devices over time.
 
 ## Consequences
 - Gateway deploys need only SSH; sudo is limited to the bootstrap, the sysctl and the cut-over.

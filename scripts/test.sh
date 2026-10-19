@@ -13,7 +13,7 @@ tmp=$(mktemp -d); trap 'kill $(jobs -p) 2>/dev/null; rm -rf "$tmp"' EXIT
 
 echo "1. Playbooks are well-formed"
 export ANSIBLE_CONFIG=ansible/ansible.cfg
-for p in deploy backup-caddy-data status root-cert bootstrap-ports cutover rollback-legacy render; do
+for p in deploy backup-caddy-data restore-caddy-data status root-cert bootstrap-ports cutover rollback-legacy render; do
   check "syntax-check $p.yml" "$VENV/ansible-playbook -i local/inventory.example.ini --syntax-check ansible/$p.yml"
 done
 
@@ -59,12 +59,12 @@ else
 fi
 
 echo "4. No sudo outside the labelled one-time steps"
-routine="deploy status backup-caddy-data root-cert smoke check test render"
+routine="deploy status backup-caddy-data restore-drill root-cert smoke check test render"
 for t in $routine; do
   out=$(make -n "$t" 2>&1)
   if echo "$out" | grep -qE '(^|[[:space:]])(sudo|-K|--ask-become-pass|-b)([[:space:]]|$)|become'; then bad "make $t must not use sudo"; else ok "make $t uses no sudo"; fi
 done
-for p in deploy backup-caddy-data status root-cert render; do
+for p in deploy backup-caddy-data restore-caddy-data status root-cert render; do
   check "$p.yml has no become/sudo" "! grep -vE '^[[:space:]]*#' ansible/$p.yml | grep -qE 'become|sudo'"
 done
 for p in bootstrap-ports cutover rollback-legacy; do

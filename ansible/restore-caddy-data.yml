@@ -1,0 +1,87 @@
+---
+# Restores Caddy's data directory (the internal CA) from a backup made by `make backup-caddy-data`.
+# Runs as the service user, no sudo. Two modes:
+#   drill=true   Unpacks the backup into a throw-away folder and checks that its root certificate matches the
+#                live one. Touches nothing live. (make restore-drill BACKUP=...)
+#   drill=false  Stops Caddy for a few seconds, sets the current data directory aside as
+#                caddy-data.replaced-<time> (NOT deleted), unpacks the backup, starts Caddy. If starting fails,
+#                the old directory is put back. (make restore-caddy-data BACKUP=...)
+- name: Restore Caddy's data directory
+  hosts: gateway
+  gather_facts: true
+  vars:
+    gateway_home: "{{ ansible_facts['user_dir'] }}/cornil-gateway"
+    drill: false
+    root_rel: caddy/pki/authorities/local/root.crt
+  tasks:
+    - name: The backup name must be one of ours and must exist
+      ansible.builtin.stat:
+        path: "{{ gateway_home }}/backups/{{ backup | default('') }}"
+      register: archive
+      failed_when: not (backup | default('') is match('^caddy-data-[0-9]{8}-[0-9]{6}\.tar\.gz$')) or not archive.stat.exists
+
+    - name: A real restore needs the explicit word RESTORE
+      ansible.builtin.assert:
+        that: (drill | bool) or (confirm | default('')) == 'RESTORE'
+        fail_msg: Not restoring. Use make restore-caddy-data BACKUP=<name> and type RESTORE when asked.
+
+    - name: Drill, unpack into a throw-away folder and compare certificates
+      when: drill | bool
+      block:
+        - name: Unpack and compare
+          ansible.builtin.shell: |
+            set -eu
+            umask 077
+            d=$(mktemp -d)
+            trap 'rm -rf "$d"' EXIT
+            tar -xzf "{{ gateway_home }}/backups/{{ backup }}" -C "$d"
+            a=$(sha256sum < "$d/caddy-data/{{ root_rel }}")
+            b=$(sha256sum < "{{ gateway_home }}/caddy-data/{{ root_rel }}")
+            if [ "$a" = "$b" ]; then echo DRILL_OK; else echo "DRILL_DIFFERENT: the backup holds a different CA than the live one"; fi
+          register: drill_out
+          changed_when: false
+        - name: Result
+          ansible.builtin.debug:
+            msg: "{{ drill_out.stdout }}"
+
+    - name: Real restore
+      when: not (drill | bool)
+      block:
+        - name: Stop Caddy
+          ansible.builtin.systemd: {scope: user, name: caddy.service, state: stopped}
+        - name: Set the current data directory aside (kept, not deleted)
+          ansible.builtin.command: >-
+            mv {{ gateway_home }}/caddy-data {{ gateway_home }}/caddy-data.replaced-{{ ansible_facts['date_time']['iso8601_basic_short'] }}
+        - name: Unpack the backup
+          ansible.builtin.command: tar -xzf {{ gateway_home }}/backups/{{ backup }} -C {{ gateway_home }}
+        - name: Keep the data directory private
+          ansible.builtin.file: {path: "{{ gateway_home }}/caddy-data", state: directory, mode: "0700"}
+        - name: Start Caddy
+          ansible.builtin.systemd: {scope: user, name: caddy.service, state: started}
+        - name: Wait until the container is up
+          ansible.builtin.command: podman inspect --format '{{ '{{' }}.State.Running{{ '}}' }}' caddy
+          register: running
+          until: running.stdout == 'true'
+          retries: 10
+          delay: 3
+          changed_when: false
+        - name: Report
+          ansible.builtin.debug:
+            msg: >-
+              Restored {{ backup }}. The previous data directory is kept as
+              caddy-data.replaced-{{ ansible_facts['date_time']['iso8601_basic_short'] }} (it holds a CA private key:
+              delete it yourself once you are sure). Now run: make root-cert, compare the fingerprint, make smoke.
+      rescue:
+        - name: Something failed, put the previous data directory back
+          ansible.builtin.shell: |
+            set -eu
+            cd "{{ gateway_home }}"
+            if [ -d "caddy-data.replaced-{{ ansible_facts['date_time']['iso8601_basic_short'] }}" ]; then
+              rm -rf caddy-data
+              mv "caddy-data.replaced-{{ ansible_facts['date_time']['iso8601_basic_short'] }}" caddy-data
+            fi
+        - name: Start Caddy again
+          ansible.builtin.systemd: {scope: user, name: caddy.service, state: started}
+        - name: Stop here
+          ansible.builtin.fail:
+            msg: The restore failed. The previous data directory was put back and Caddy started again.

@@ -121,7 +121,7 @@ Not done by this repo.
 - **Q2 (answered: yes, the January 2026 certificate is installed on devices; see Q5).** Did you ever install the January 2026 root certificate on a device? (Default: no. A fresh CA is created and the old one is left alone.)
 - **Q3 (answered: yes).** Approve the port setting (`ip_unprivileged_port_start=80`) as a one-time sudo step? (Default: not applied until you say yes.)
 - **Q4 (answered: yes, run; results in section 9).** May I run the throw-away `host.containers.internal` test as `homeapps` (creates and removes one temporary container and network)? (Default: no, not until you say yes.)
-- **Q5 (open).** Because the January certificate is on some devices: start with a fresh CA (the current state; every device installs the new file once, which all five need anyway), or let the new Caddy adopt the old CA (existing devices keep working, but it means copying the old CA's private key with sudo into the new data directory, and keeping an experiment-era key alive)? Recommended: fresh CA. The fresh CA already exists on the server; adopting the old one would mean replacing it, so decide before devices are set up.
+- **Q5 (treated as settled 2026-10-19: fresh CA kept; the owner did not ask to adopt the old one).** Because the January certificate is on some devices: start with a fresh CA (the current state; every device installs the new file once, which all five need anyway), or let the new Caddy adopt the old CA (existing devices keep working, but it means copying the old CA's private key with sudo into the new data directory, and keeping an experiment-era key alive)? Recommended: fresh CA. The fresh CA already exists on the server; adopting the old one would mean replacing it, so decide before devices are set up.
 
 ## 9. G2 results (2026-10-19)
 
@@ -149,3 +149,21 @@ The loopback case used a rootless throw-away listener rather than a rootful one:
 1. `make bootstrap-ports` (the approved setting).
 2. `make cutover` (back up and stop the legacy Caddy).
 3. `make deploy` (moves the new Caddy to 80 and 443), then `make smoke`.
+
+## 10. Final layout (after G3 steps are done)
+
+```
+Internet-facing: nothing. Home network (LAN) sees only:  22 (SSH)   80, 443 (Caddy)
+
+ device ──https──> Caddy (rootless container, user homeapps, network "gateway")
+                     ├─ /tax-healthcare/*  ──> tax-healthcare-tool-web:8000   (same network, by name)
+                     └─ /parts-db/*        ──> host.containers.internal:8888  (until parts-db is rootless;
+                                              then <container name>:8000 on "gateway")
+```
+- Gateway files on the server: `~/cornil-gateway/{config,caddy-data,caddy-config,backups}` and the units `~/.config/containers/systemd/{caddy.container,gateway.network}`, all owned by `homeapps`, written only by this repo.
+- One-time system changes (done by the owner with sudo): `/etc/sysctl.d/90-unprivileged-ports.conf`; the legacy Caddy stopped and archived under `/root/caddy-legacy-backup/`. Optional: `/etc/cornil/lan-ports.nft` and `cornil-lan-ports.service` (`docs/closing-plain-ports.md`).
+- Recovery: `docs/recovery.md`. Closing the old ports: `docs/closing-plain-ports.md`. Decisions: `docs/decisions/`.
+
+## 11. G3 status
+- Tax upstream now by name (done, verified). parts-db's own redirects now carry `/parts-db/` (Part B works).
+- Open: 8890 (tax request), 8889 (owner decommissions the rootful copy), 8888 (firewall or rootless move).

@@ -8,7 +8,7 @@ It serves two Django apps over HTTPS:
 
 No other repository may contain Caddy configuration or write to the proxy's files.
 
-**Status:** G2 built and running on trial ports 8080/8443 beside the legacy Caddy. Ports 80/443 await the owner's sudo steps (see `docs/design.md` section 9).
+**Status:** live. The gateway serves both apps on ports 80 and 443. Closing the old plain-HTTP ports is described in `docs/closing-plain-ports.md`; recovery in `docs/recovery.md`.
 
 ## Where to read
 - `CLAUDE.md`: secrets, privacy and working rules.
@@ -31,6 +31,8 @@ Routine commands use SSH as the service user and never ask for the sudo password
     make smoke               # end-to-end check through the gateway
     make root-cert           # fetch the PUBLIC root certificate; install it on devices (docs/trust-root-cert.md)
     make backup-caddy-data   # back up the CA on the server
+    make restore-drill BACKUP=<name>       # prove a backup is usable (touches nothing live)
+    make restore-caddy-data BACKUP=<name>  # replace the live CA data with a backup
     make check               # secret scan + tests (needs: brew install caddy gitleaks)
 
 Three targets marked `[SUDO]` (`bootstrap-ports`, `cutover`, `rollback-legacy`) ask for the sudo password; each playbook's first lines say exactly what it changes.
