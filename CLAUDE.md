@@ -40,3 +40,7 @@ Rules:
 
 ## Not in scope
 App code, app databases, tax or health calculations, anything inside parts-db or the Tax and Healthcare Tool repositories (separate sessions; this repo only documents what each app must provide: a URL prefix, its own cookie names, proxy-aware settings).
+
+## Decisions log (details in `docs/decisions/`)
+- 2026-10-19 (ADR 0001): Caddy is a rootless container of `homeapps`; one repo owns the proxy; HSTS off; ESP32 route dropped; parts-db goes rootless later. Root certificate for MacBook Pro, iMac, iPhone, iPad, Windows. **Pending owner approval:** sysctl for ports 80/443, parts-db connection test.
+- Never print `systemctl cat`, unit files or `Environment=` lines unfiltered: legacy units on the host contain secrets in plain text.

@@ -8,13 +8,13 @@ It serves two Django apps over HTTPS:
 
 No other repository may contain Caddy configuration or write to the proxy's files.
 
-**Status:** phase G1 (inspect and design). Nothing is deployed yet.
+**Status:** phase G1 (design written, awaiting owner approval). Nothing is deployed yet.
 
 ## Where to read
 - `CLAUDE.md`: secrets, privacy and working rules.
 - `docs/prompts/GATEWAY.md`: the task definition (Part A is this repo).
 - `docs/design.md` and `docs/decisions/`: the design and its decisions (written in G1).
-- Podman concepts in plain language: `podman-explained.md` in the tax repo (linked from here once its path is known).
+- Podman concepts in plain language: [`docs/podman-explained.md`](docs/podman-explained.md) (copied from the tax repo, which holds the original).
 
 ## Getting started on a new clone
     make hooks    # turn on the secret scan before every commit
