@@ -72,7 +72,7 @@ for p in bootstrap-ports cutover rollback-legacy; do
 done
 
 echo "5. Secrets and ownership"
-check "no private key material tracked" "! git ls-files | xargs grep -lE 'PRIVATE KEY' 2>/dev/null | grep -v '^scripts/\(test\|root-cert\).sh$' | grep ."
-check "Caddy configuration lives only in ansible/templates" "[ -z \"\$(git ls-files | grep -iE '(^|/)Caddyfile' )\" ]"
+check "no private key material tracked" "! git ls-files | xargs grep -lE -e '-----BEGIN [A-Z ]*PRIVATE KEY-----' 2>/dev/null | grep -v '^scripts/test.sh$' | grep ."
+check "Caddy configuration lives only in ansible/templates" "[ -z \"\$(git ls-files | grep -iE '(^|/)Caddyfile' | grep -v '^ansible/templates/Caddyfile.j2$')\" ]"
 
 [ "$fail" = 0 ] && echo "ALL TESTS PASSED" || { echo "SOME TESTS FAILED"; exit 1; }
