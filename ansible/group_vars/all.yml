@@ -1,0 +1,21 @@
+---
+# Defaults for the whole gateway. Per-machine overrides go in local/vars.yml (git-ignored).
+
+gateway_hostname: cornil.fritz.box
+
+# Final state: standard ports (needs the one-time `make bootstrap-ports`).
+# For the trial beside the legacy Caddy: make deploy HTTP_PORT=8080 HTTPS_PORT=8443
+gateway_http_port: 80
+gateway_https_port: 443
+
+# Official image, pinned. Change deliberately, then run `make deploy`.
+caddy_image: docker.io/library/caddy:2.11.2
+
+# Where Caddy finds each app. Both are the app's port on the host or network.
+# Tax app: TRANSITIONAL value (the app does not yet join the `gateway` network, see docs/design.md).
+#   Final value, once the tax unit has Network=gateway.network:  tax-healthcare-tool-web:8000
+# parts-db: rootful, reached through the host (decision: docs/decisions/0001).
+tax_upstream: host.containers.internal:8890
+partsdb_upstream: host.containers.internal:8888
+
+caddy_data_backups_to_keep: 7

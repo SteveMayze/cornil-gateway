@@ -1,0 +1,27 @@
+---
+# NEEDS SUDO for the second play. Run by the owner with: make rollback-legacy
+# Puts the legacy Caddy back and takes the new one off ports 80/443. The legacy package and its files were
+# never removed by the cut-over, so this is a restart, not a restore.
+- name: Stop the new Caddy and keep it from starting at boot
+  hosts: gateway
+  gather_facts: true
+  tasks:
+    - name: Stop the container service
+      ansible.builtin.systemd: {scope: user, name: caddy.service, state: stopped}
+      failed_when: false
+    - name: Move its unit file aside (make deploy puts it back)
+      ansible.builtin.command: >-
+        mv {{ ansible_facts['user_dir'] }}/.config/containers/systemd/caddy.container
+        {{ ansible_facts['user_dir'] }}/.config/containers/systemd/caddy.container.disabled
+      args:
+        removes: "{{ ansible_facts['user_dir'] }}/.config/containers/systemd/caddy.container"
+    - name: Let systemd forget it
+      ansible.builtin.systemd: {scope: user, daemon_reload: true}
+
+- name: Start the legacy Caddy again
+  hosts: admin
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Enable and start the legacy caddy.service
+      ansible.builtin.systemd: {name: caddy.service, state: started, enabled: true}

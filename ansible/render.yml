@@ -1,0 +1,22 @@
+---
+# Renders the templates on THIS machine into render_dir, so tests and humans can look at the real artifacts.
+# Used by `make render` and scripts/test.sh. Touches nothing on the server.
+- name: Render gateway templates locally
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    render_dir: "{{ playbook_dir }}/../build"
+    gateway_home: /home/example-user/cornil-gateway
+  tasks:
+    - name: Make the output directory
+      ansible.builtin.file: {path: "{{ render_dir }}", state: directory, mode: "0755"}
+    - name: Render each template
+      ansible.builtin.template:
+        src: "{{ item.src }}"
+        dest: "{{ render_dir }}/{{ item.dest }}"
+        mode: "0644"
+      loop:
+        - {src: Caddyfile.j2, dest: Caddyfile}
+        - {src: gateway.network.j2, dest: gateway.network}
+        - {src: caddy.container.j2, dest: caddy.container}

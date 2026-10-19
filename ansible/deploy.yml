@@ -1,0 +1,185 @@
+---
+# Deploys the gateway. Runs as the service user (no sudo, no become). Safe to repeat: a second run changes nothing.
+#
+# Order matters: every check and the validation happen BEFORE the live Caddyfile is touched, and the
+# previous Caddyfile is put back if the reload fails.
+- name: Deploy the cornil gateway (rootless Caddy)
+  hosts: gateway
+  gather_facts: true
+  vars:
+    gateway_home: "{{ ansible_facts['user_dir'] }}/cornil-gateway"
+  tasks:
+    # ---- checks that explain themselves ------------------------------------------------------------
+    - name: Check linger is on (the user's services must run with nobody logged in)
+      ansible.builtin.command: loginctl show-user {{ ansible_facts['user_id'] }} --property=Linger --value
+      register: linger
+      changed_when: false
+      failed_when: linger.stdout != 'yes'
+
+    - name: Read the lowest port an ordinary user may bind
+      ansible.builtin.command: cat /proc/sys/net/ipv4/ip_unprivileged_port_start
+      register: port_start
+      changed_when: false
+
+    - name: Check the chosen ports may be bound without root
+      ansible.builtin.assert:
+        that: (port_start.stdout | int) <= ([gateway_http_port | int, gateway_https_port | int] | min)
+        fail_msg: >-
+          Ports {{ gateway_http_port }}/{{ gateway_https_port }} are below the server's unprivileged-port limit
+          ({{ port_start.stdout }}). Run the one-time `make bootstrap-ports` (an administrator step, run by the owner), or for the trial beside
+          the legacy Caddy use: make deploy HTTP_PORT=8080 HTTPS_PORT=8443
+
+    - name: Remember whether Caddy is already running
+      ansible.builtin.command: systemctl --user is-active caddy.service
+      register: was_active
+      changed_when: false
+      failed_when: false
+
+    # ---- folders -----------------------------------------------------------------------------------
+    - name: Create the gateway folders (private to the service user)
+      ansible.builtin.file:
+        path: "{{ gateway_home }}/{{ item }}"
+        state: directory
+        mode: "0700"
+      loop: [config, caddy-data, caddy-config, backups]
+
+    - name: Drop the disabled marker left by `make rollback-legacy`, if any
+      ansible.builtin.file:
+        path: "{{ ansible_facts['user_dir'] }}/.config/containers/systemd/caddy.container.disabled"
+        state: absent
+
+    - name: Make sure the user's quadlet folder exists
+      ansible.builtin.file:
+        path: "{{ ansible_facts['user_dir'] }}/.config/containers/systemd"
+        state: directory
+        mode: "0755"
+
+    # ---- image -------------------------------------------------------------------------------------
+    - name: Is the Caddy image already on the server?
+      ansible.builtin.command: podman image exists {{ caddy_image }}
+      register: image_present
+      changed_when: false
+      failed_when: false
+
+    - name: Pull the pinned Caddy image
+      ansible.builtin.command: podman pull --quiet {{ caddy_image }}
+      when: image_present.rc != 0
+      changed_when: true
+
+    # ---- validate the new Caddyfile BEFORE it can replace the live one -----------------------------
+    - name: Render the candidate Caddyfile (not live yet)
+      ansible.builtin.template:
+        src: Caddyfile.j2
+        dest: "{{ gateway_home }}/config/Caddyfile.candidate"
+        mode: "0600"
+
+    - name: Validate the candidate with Caddy itself, in a throw-away container
+      ansible.builtin.command: >-
+        podman run --rm --network none --tmpfs /tmp
+        -e XDG_DATA_HOME=/tmp -e XDG_CONFIG_HOME=/tmp
+        -v {{ gateway_home }}/config:/etc/caddy:ro
+        {{ caddy_image }}
+        caddy validate --config /etc/caddy/Caddyfile.candidate --adapter caddyfile
+      changed_when: false
+
+    # ---- quadlet files -----------------------------------------------------------------------------
+    - name: Install the network unit
+      ansible.builtin.template:
+        src: gateway.network.j2
+        dest: "{{ ansible_facts['user_dir'] }}/.config/containers/systemd/gateway.network"
+        mode: "0644"
+      register: network_unit
+
+    - name: Install the Caddy unit
+      ansible.builtin.template:
+        src: caddy.container.j2
+        dest: "{{ ansible_facts['user_dir'] }}/.config/containers/systemd/caddy.container"
+        mode: "0644"
+      register: caddy_unit
+
+    - name: Let systemd read the new unit files
+      ansible.builtin.systemd:
+        scope: user
+        daemon_reload: true
+      when: network_unit.changed or caddy_unit.changed
+
+    # ---- swap in the Caddyfile, reload, or put the old one back -------------------------------------
+    # In --check mode nothing is written, so the steps that need the candidate file are skipped.
+    - name: Compare candidate and live Caddyfile
+      when: not ansible_check_mode
+      ansible.builtin.stat:
+        path: "{{ gateway_home }}/config/{{ item }}"
+        checksum_algorithm: sha256
+      loop: [Caddyfile, Caddyfile.candidate]
+      register: caddyfiles
+
+    - name: Work out whether the Caddyfile changes
+      when: not ansible_check_mode
+      ansible.builtin.set_fact:
+        caddyfile_changes: >-
+          {{ not caddyfiles.results[0].stat.exists
+             or caddyfiles.results[0].stat.checksum != caddyfiles.results[1].stat.checksum }}
+
+    - name: Apply the new Caddyfile
+      when: not ansible_check_mode and (caddyfile_changes | bool)
+      block:
+        - name: Keep the previous Caddyfile
+          ansible.builtin.copy:
+            src: "{{ gateway_home }}/config/Caddyfile"
+            dest: "{{ gateway_home }}/config/Caddyfile.previous"
+            remote_src: true
+            mode: "0600"
+          when: caddyfiles.results[0].stat.exists
+
+        - name: Put the validated Caddyfile live
+          ansible.builtin.copy:
+            src: "{{ gateway_home }}/config/Caddyfile.candidate"
+            dest: "{{ gateway_home }}/config/Caddyfile"
+            remote_src: true
+            mode: "0600"
+
+        - name: Reload Caddy in place (no restart) when only the Caddyfile changed
+          ansible.builtin.command: podman exec caddy caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile
+          when: was_active.rc == 0 and not caddy_unit.changed
+          changed_when: true
+      rescue:
+        - name: Reload failed, so put the previous Caddyfile back
+          ansible.builtin.copy:
+            src: "{{ gateway_home }}/config/Caddyfile.previous"
+            dest: "{{ gateway_home }}/config/Caddyfile"
+            remote_src: true
+            mode: "0600"
+          when: caddyfiles.results[0].stat.exists
+        - name: Stop here
+          ansible.builtin.fail:
+            msg: The new Caddyfile failed to load. The previous one was restored. See the task above for Caddy's message.
+
+    # ---- run -----------------------------------------------------------------------------------------
+    - name: Restart Caddy when its unit changed while it was running
+      ansible.builtin.systemd:
+        scope: user
+        name: caddy.service
+        state: restarted
+      when: not ansible_check_mode and caddy_unit.changed and was_active.rc == 0
+
+    - name: Make sure Caddy is running
+      when: not ansible_check_mode
+      ansible.builtin.systemd:
+        scope: user
+        name: caddy.service
+        state: started
+
+    - name: Wait until the container is up
+      when: not ansible_check_mode
+      ansible.builtin.command: podman inspect --format '{{ '{{' }}.State.Running{{ '}}' }}' caddy
+      register: running
+      until: running.stdout == 'true'
+      retries: 10
+      delay: 3
+      changed_when: false
+
+    - name: Summary
+      ansible.builtin.debug:
+        msg: >-
+          Caddy is running on ports {{ gateway_http_port }} (HTTP) and {{ gateway_https_port }} (HTTPS),
+          image {{ caddy_image }}. Check from your Mac with: make smoke

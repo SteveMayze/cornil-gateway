@@ -1,3 +1,3 @@
-# Copy to local/vars.yml (git-ignored). Fake example values only.
-service_user: homeapps
-gateway_hostname: cornil.fritz.box
+# Copy to local/vars.yml (git-ignored). Optional per-machine overrides of ansible/group_vars/all.yml.
+# Fake example values only.
+# tax_upstream: tax-healthcare-tool-web:8000

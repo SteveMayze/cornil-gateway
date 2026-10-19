@@ -44,3 +44,5 @@ App code, app databases, tax or health calculations, anything inside parts-db or
 ## Decisions log (details in `docs/decisions/`)
 - 2026-10-19 (ADR 0001): Caddy is a rootless container of `homeapps`; one repo owns the proxy; HSTS off; ESP32 route dropped; parts-db goes rootless later. Root certificate for MacBook Pro, iMac, iPhone, iPad, Windows. **Pending owner approval:** sysctl for ports 80/443, parts-db connection test.
 - Never print `systemctl cat`, unit files or `Environment=` lines unfiltered: legacy units on the host contain secrets in plain text.
+- 2026-10-19 (ADR 0001, accepted): sysctl `ip_unprivileged_port_start=80` approved (applied by the owner with `make bootstrap-ports`); parts-db reached via `host.containers.internal:8888` (tested: fails if parts-db is narrowed to 127.0.0.1); new Caddy runs on trial ports 8080/8443 until `make cutover`. Open: fresh CA vs adopting the January 2026 CA (design Q5).
+- Test target `make check` needs local `caddy` and `gitleaks` (brew). Run shell tests with bash, not zsh; give `ssh` the `-n` flag inside scripts.

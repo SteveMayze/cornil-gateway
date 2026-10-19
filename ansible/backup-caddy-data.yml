@@ -1,0 +1,34 @@
+---
+# Backs up Caddy's data directory (the internal CA lives there, PRIVATE KEY included) on the server.
+# The archive stays on the server in a private folder. Runs as the service user, no sudo.
+- name: Back up Caddy's data directory
+  hosts: gateway
+  gather_facts: true
+  vars:
+    gateway_home: "{{ ansible_facts['user_dir'] }}/cornil-gateway"
+  tasks:
+    - name: Make the backup folder
+      ansible.builtin.file: {path: "{{ gateway_home }}/backups", state: directory, mode: "0700"}
+
+    - name: Create the dated archive (readable by the service user only)
+      ansible.builtin.shell: |
+        set -eu
+        umask 077
+        name=caddy-data-$(date +%Y%m%d-%H%M%S).tar.gz
+        tar -czf "{{ gateway_home }}/backups/$name" -C "{{ gateway_home }}" caddy-data
+        tar -tzf "{{ gateway_home }}/backups/$name" > /dev/null
+        echo "$name"
+      register: made
+      changed_when: true
+
+    - name: Keep only the newest archives
+      ansible.builtin.shell: |
+        cd "{{ gateway_home }}/backups"
+        ls -1t caddy-data-*.tar.gz | tail -n +{{ caddy_data_backups_to_keep | int + 1 }} | xargs -r rm --
+      changed_when: false
+
+    - name: Report
+      ansible.builtin.debug:
+        msg: >-
+          Backup {{ made.stdout }} is in {{ gateway_home }}/backups on the server. It contains the CA private key:
+          keep it on the server or copy it only to your own encrypted storage, never into the repo.

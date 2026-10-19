@@ -1,0 +1,38 @@
+# Managed by cornil-gateway (ansible/deploy.yml). Do not edit by hand: changes are overwritten on the next deploy.
+# A ROOTLESS Quadlet file: it lives in the service user's ~/.config/containers/systemd/ and is run by that
+# user's systemd (systemctl --user).
+[Unit]
+Description=Caddy gateway for cornil (rootless Podman Quadlet)
+
+[Container]
+Image={{ caddy_image }}
+ContainerName=caddy
+Network=gateway.network
+# Caddy listens inside on the same numbers as the host, so its redirects carry the right port.
+PublishPort={{ gateway_http_port }}:{{ gateway_http_port }}
+PublishPort={{ gateway_https_port }}:{{ gateway_https_port }}
+# The Caddyfile directory is mounted (not the single file) so an atomic replace is seen.
+Volume={{ gateway_home }}/config:/etc/caddy:ro
+# /data holds the internal certificate authority INCLUDING ITS PRIVATE KEY. Never copy it into the repo.
+Volume={{ gateway_home }}/caddy-data:/data
+Volume={{ gateway_home }}/caddy-config:/config
+ReadOnly=true
+Tmpfs=/tmp
+NoNewPrivileges=true
+DropCapability=ALL
+AddCapability=NET_BIND_SERVICE
+PodmanArgs=--memory=256m --pids-limit=256
+HealthCmd=wget -q -O /dev/null http://127.0.0.1:2019/config/
+HealthInterval=60s
+HealthTimeout=5s
+HealthRetries=3
+HealthStartPeriod=20s
+
+[Service]
+Restart=always
+RestartSec=5
+TimeoutStartSec=180
+
+[Install]
+# default.target is what a user's systemd starts at boot (with linger) and at login.
+WantedBy=default.target

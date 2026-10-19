@@ -1,0 +1,36 @@
+---
+# ONE-TIME, NEEDS SUDO. Run by the owner with: make bootstrap-ports
+#
+# What it changes on the server, and nothing else:
+#   1. Creates /etc/sysctl.d/90-unprivileged-ports.conf containing
+#        net.ipv4.ip_unprivileged_port_start=80
+#   2. Applies that value now (so no reboot is needed).
+# Why: an ordinary user (the service user) may not listen on ports below 1024 by default. Caddy needs 80 and 443.
+# Trade-off: any local user may then listen on ports 80 and up. Accepted on a single-owner home server (ADR 0001).
+# Undo: delete the file and run `sudo sysctl --system`, or reboot.
+- name: One-time bootstrap, lower the unprivileged port limit to 80
+  hosts: admin
+  become: true
+  gather_facts: false
+  vars:
+    wanted: 80
+  tasks:
+    - name: Write the setting to /etc/sysctl.d
+      ansible.builtin.copy:
+        dest: /etc/sysctl.d/90-unprivileged-ports.conf
+        content: |
+          # Managed by cornil-gateway (make bootstrap-ports). Lets the rootless Caddy listen on 80 and 443.
+          net.ipv4.ip_unprivileged_port_start={{ wanted }}
+        owner: root
+        group: root
+        mode: "0644"
+
+    - name: Read the live value
+      ansible.builtin.command: cat /proc/sys/net/ipv4/ip_unprivileged_port_start
+      register: live
+      changed_when: false
+
+    - name: Apply it now
+      ansible.builtin.command: /usr/sbin/sysctl -w net.ipv4.ip_unprivileged_port_start={{ wanted }}
+      when: (live.stdout | int) != wanted
+      changed_when: true

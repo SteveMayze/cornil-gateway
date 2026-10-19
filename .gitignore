@@ -24,3 +24,5 @@ data/
 .DS_Store
 .idea/
 .vscode/
+build/
+.venv-infra/

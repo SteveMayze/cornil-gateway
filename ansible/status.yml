@@ -1,0 +1,19 @@
+---
+# Read-only overview. Runs as the service user, no sudo.
+- name: Gateway status
+  hosts: gateway
+  gather_facts: true
+  tasks:
+    - name: Collect
+      ansible.builtin.shell: |
+        podman ps --filter name=caddy --format 'container={{ '{{' }}.Names{{ '}}' }} status={{ '{{' }}.Status{{ '}}' }} ports={{ '{{' }}.Ports{{ '}}' }}'
+        echo "unit: $(systemctl --user is-active caddy.service)"
+        echo "network: $(podman network ls --format '{{ '{{' }}.Name{{ '}}' }}' | grep -x gateway || echo missing)"
+        echo "port limit: $(cat /proc/sys/net/ipv4/ip_unprivileged_port_start)"
+        echo "data dir mode: $(stat -c %a ~/cornil-gateway/caddy-data 2>/dev/null || echo missing)"
+        echo "last backup: $(ls -1t ~/cornil-gateway/backups 2>/dev/null | head -1 || true)"
+      register: out
+      changed_when: false
+    - name: Show
+      ansible.builtin.debug:
+        msg: "{{ out.stdout_lines }}"

@@ -1,0 +1,51 @@
+---
+# NEEDS SUDO. Run by the owner with: make cutover   (after make bootstrap-ports and a trial `make deploy`)
+#
+# What it changes on the server:
+#   1. Copies the legacy Caddy's files (/etc/caddy and /var/lib/caddy, which holds its old CA) into one
+#      root-only archive under /root/caddy-legacy-backup/. Nothing is deleted.
+#   2. Stops the legacy caddy.service and stops it starting at boot (the package and its files stay).
+# Why: the legacy Caddy holds ports 80 and 443; the new rootless Caddy needs them.
+# Afterwards `make deploy` (no sudo) moves the new Caddy to 80/443. Undo: make rollback-legacy.
+- name: Cut over from the legacy Caddy
+  hosts: admin
+  become: true
+  gather_facts: false
+  vars:
+    stamp: "{{ lookup('pipe', 'date +%Y%m%d-%H%M%S') }}"
+  tasks:
+    - name: The port limit must already allow 80
+      ansible.builtin.command: cat /proc/sys/net/ipv4/ip_unprivileged_port_start
+      register: port_start
+      changed_when: false
+      failed_when: (port_start.stdout | int) > 80
+
+    - name: Folder for the legacy backup (root only)
+      ansible.builtin.file: {path: /root/caddy-legacy-backup, state: directory, owner: root, group: root, mode: "0700"}
+
+    - name: Archive the legacy Caddy files, keeping owners and modes
+      ansible.builtin.command: >-
+        tar --create --gzip --preserve-permissions
+        --file /root/caddy-legacy-backup/caddy-legacy-{{ stamp }}.tar.gz
+        /etc/caddy /var/lib/caddy
+      args:
+        creates: "/root/caddy-legacy-backup/caddy-legacy-{{ stamp }}.tar.gz"
+
+    - name: Lock the archive down
+      ansible.builtin.file:
+        path: "/root/caddy-legacy-backup/caddy-legacy-{{ stamp }}.tar.gz"
+        owner: root
+        group: root
+        mode: "0600"
+
+    - name: Stop the legacy Caddy and keep it from starting at boot
+      ansible.builtin.systemd:
+        name: caddy.service
+        state: stopped
+        enabled: false
+
+    - name: Report
+      ansible.builtin.debug:
+        msg: >-
+          Legacy Caddy stopped. Its files are archived at /root/caddy-legacy-backup/caddy-legacy-{{ stamp }}.tar.gz
+          (root only; it contains the old CA private key and stays on the server). Now run: make deploy

@@ -8,7 +8,7 @@ It serves two Django apps over HTTPS:
 
 No other repository may contain Caddy configuration or write to the proxy's files.
 
-**Status:** phase G1 (design written, awaiting owner approval). Nothing is deployed yet.
+**Status:** G2 built and running on trial ports 8080/8443 beside the legacy Caddy. Ports 80/443 await the owner's sudo steps (see `docs/design.md` section 9).
 
 ## Where to read
 - `CLAUDE.md`: secrets, privacy and working rules.
@@ -22,3 +22,15 @@ No other repository may contain Caddy configuration or write to the proxy's file
 
 Real addresses, usernames and keys live only in `local/` (git-ignored). Copy the `*.example.*`
 files there and edit the copies.
+
+## Everyday commands
+Routine commands use SSH as the service user and never ask for the sudo password. `make help` lists all of them.
+
+    make deploy              # install or update Caddy (add HTTP_PORT=8080 HTTPS_PORT=8443 for the trial ports)
+    make status              # read-only overview
+    make smoke               # end-to-end check through the gateway
+    make root-cert           # fetch the PUBLIC root certificate; install it on devices (docs/trust-root-cert.md)
+    make backup-caddy-data   # back up the CA on the server
+    make check               # secret scan + tests (needs: brew install caddy gitleaks)
+
+Three targets marked `[SUDO]` (`bootstrap-ports`, `cutover`, `rollback-legacy`) ask for the sudo password; each playbook's first lines say exactly what it changes.

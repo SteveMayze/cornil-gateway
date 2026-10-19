@@ -1,6 +1,6 @@
 # Design: the cornil gateway (G1)
 
-Status: **proposed**. Nothing here has been applied to the host. The port setting in section 3 needs the owner's approval first.
+Status: **G1 design plus G2 results (section 9)**. The port setting in section 3 is approved but not yet applied: it needs the owner's sudo (see section 9).
 
 New to Podman or systemd? Read [`podman-explained.md`](podman-explained.md) first (copied from the tax repo; the tax repo's copy is the original). Terms are explained again here only where this design needs them.
 
@@ -115,9 +115,37 @@ Not done by this repo.
 
 **parts-db repo (Part B of GATEWAY.md):** prefix `/parts-db`, own cookie names, proxy-aware settings, remove all Caddy tasks. A later separate step moves it to rootless and onto the `gateway` network.
 
-## 8. Open questions
+## 8. Open questions (answered 2026-10-19 unless marked)
 
-- **Q1.** Tax cut-over: should the rootless copy on 8890 become the live app on 8889 before the gateway is built, or should the gateway target the 8890 copy for now? (Default: finish the cut-over first.)
-- **Q2.** Did you ever install the January 2026 root certificate on a device? (Default: no. A fresh CA is created and the old one is left alone.)
-- **Q3.** Approve the port setting (`ip_unprivileged_port_start=80`) as a one-time sudo step? (Default: not applied until you say yes.)
-- **Q4.** May I run the throw-away `host.containers.internal` test as `homeapps` (creates and removes one temporary container and network)? (Default: no, not until you say yes.)
+- **Q1 (answered: tax cut-over done, both copies run in parallel for now).** Tax cut-over: should the rootless copy on 8890 become the live app on 8889 before the gateway is built, or should the gateway target the 8890 copy for now? (Default: finish the cut-over first.)
+- **Q2 (answered: yes, the January 2026 certificate is installed on devices; see Q5).** Did you ever install the January 2026 root certificate on a device? (Default: no. A fresh CA is created and the old one is left alone.)
+- **Q3 (answered: yes).** Approve the port setting (`ip_unprivileged_port_start=80`) as a one-time sudo step? (Default: not applied until you say yes.)
+- **Q4 (answered: yes, run; results in section 9).** May I run the throw-away `host.containers.internal` test as `homeapps` (creates and removes one temporary container and network)? (Default: no, not until you say yes.)
+- **Q5 (open).** Because the January certificate is on some devices: start with a fresh CA (the current state; every device installs the new file once, which all five need anyway), or let the new Caddy adopt the old CA (existing devices keep working, but it means copying the old CA's private key with sudo into the new data directory, and keeping an experiment-era key alive)? Recommended: fresh CA. The fresh CA already exists on the server; adopting the old one would mean replacing it, so decide before devices are set up.
+
+## 9. G2 results (2026-10-19)
+
+**Connection test (Q4), run as `homeapps` with throw-away containers, since removed:**
+
+| Test | Result |
+|---|---|
+| Container reaches another container **by name** on a user-defined rootless network | Works |
+| Container on that network reaches parts-db at `host.containers.internal:8888` (rootful, listening on all interfaces) | Works (parts-db answers with its redirect) |
+| Same to the rootless tax copy on 8890 | Works (redirect to its login page) |
+| Same to a service listening **only on `127.0.0.1`** of the host (stand-in for G3's narrowed parts-db) | **Refused.** `host.containers.internal` maps to a link-local address (`169.254.1.2`) that pasta forwards to the host's network addresses, not its loopback |
+| Container with host networking to `127.0.0.1` | Works |
+
+The loopback case used a rootless throw-away listener rather than a rootful one: to Caddy both are just a socket on `127.0.0.1`, so the result carries over; I did not run the rootful variant.
+
+**Consequence for parts-db:** option A (`host.containers.internal`) is used. After G3 narrows parts-db to `127.0.0.1`, it would stop working. Until parts-db is rootless (and joins `gateway` by name), parts-db therefore keeps listening on all interfaces, and the LAN-side exposure is reduced by the optional host firewall (G3 proposal) instead. If you prefer to narrow parts-db anyway, the fallback is host networking for Caddy, which loses the isolation and the by-name route to the tax app.
+
+**What was built and verified (`make check` runs the first two lines):**
+- Rendered Caddyfile validated by a real Caddy and run in front of stand-in apps: routing, 308 redirects, prefix stripping, `Host` kept, `X-Forwarded-Proto: https`, HTTP to HTTPS redirect, no HSTS.
+- Rendered Quadlet files accepted by the server's own generator (`make quadlet-dryrun`).
+- Deployed on the server on trial ports 8080 and 8443, beside the legacy Caddy: container healthy, data directory mode 700, `gateway` network created, second deploy `changed=0`, a Caddyfile that fails validation never goes live, a valid change is reloaded without restarting the container, `make backup-caddy-data` writes a mode 600 archive, `make root-cert` fetches only the public certificate, `make smoke` passes.
+- Not verified: the automatic restore of the previous Caddyfile when validation passes but the reload itself fails (the path exists in `ansible/deploy.yml` but I could not provoke it); a reboot of the server; the by-name route to the tax app (the tax unit does not yet join the `gateway` network, so Caddy currently reaches it through `host.containers.internal:8890`).
+
+**Still to do, needs the owner (sudo):**
+1. `make bootstrap-ports` (the approved setting).
+2. `make cutover` (back up and stop the legacy Caddy).
+3. `make deploy` (moves the new Caddy to 80 and 443), then `make smoke`.

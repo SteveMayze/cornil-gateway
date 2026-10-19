@@ -1,0 +1,13 @@
+---
+# Fetches ONLY Caddy's PUBLIC root certificate (root.crt). The private keys next to it are never touched.
+- name: Fetch the public root certificate
+  hosts: gateway
+  gather_facts: true
+  vars:
+    cert_path: "{{ ansible_facts['user_dir'] }}/cornil-gateway/caddy-data/caddy/pki/authorities/local/root.crt"
+  tasks:
+    - name: Fetch root.crt
+      ansible.builtin.fetch:
+        src: "{{ cert_path }}"
+        dest: "{{ playbook_dir }}/../local/cornil-root.crt"
+        flat: true

@@ -1,0 +1,31 @@
+# Managed by cornil-gateway (ansible/deploy.yml). Do not edit on the server: changes are overwritten.
+{
+	http_port {{ gateway_http_port }}
+	https_port {{ gateway_https_port }}
+	# The container has nothing to install a root certificate into; devices get root.crt by hand.
+	skip_install_trust
+	servers {
+		protocols h1 h2
+	}
+}
+
+{{ gateway_hostname }} {
+	tls internal
+	encode zstd gzip
+
+	redir /parts-db /parts-db/ 308
+	redir /tax-healthcare /tax-healthcare/ 308
+
+	# handle_path strips the prefix; each app generates prefixed URLs itself.
+	# Caddy keeps the Host header and adds X-Forwarded-Proto/-For/-Host.
+	handle_path /parts-db/* {
+		reverse_proxy {{ partsdb_upstream }}
+	}
+	handle_path /tax-healthcare/* {
+		reverse_proxy {{ tax_upstream }}
+	}
+
+	handle {
+		respond "cornil: parts-db and tax-healthcare" 200
+	}
+}
