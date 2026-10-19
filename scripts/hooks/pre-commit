@@ -1,0 +1,9 @@
+#!/bin/sh
+# Blocks a commit if the secret scanner (gitleaks) finds anything in the staged changes.
+# Installed by `make hooks`, which points git at this directory.
+if ! command -v gitleaks >/dev/null 2>&1; then
+    echo "pre-commit: gitleaks is not installed, so the secret scan cannot run." >&2
+    echo "Install it (macOS: brew install gitleaks) and commit again." >&2
+    exit 1
+fi
+exec gitleaks git --pre-commit --staged --redact --verbose

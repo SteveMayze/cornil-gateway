@@ -1,0 +1,26 @@
+# Private, per-machine values (CLAUDE.md rule 1). Only *.example files are tracked.
+local/*
+!local/*.example.*
+!local/.gitkeep
+
+# Keys and certificates. Public test files must be added with `git add -f` and documented.
+*.key
+*.pem
+
+# Environment files (the tracked placeholder is .env.example)
+*.env
+.env
+!.env.example
+
+# Ansible leftovers and vault password
+*.retry
+.vault_pass
+
+# Backups and data copies of the server's files
+backups/
+data/
+
+# macOS and editor noise
+.DS_Store
+.idea/
+.vscode/
