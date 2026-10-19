@@ -11,9 +11,13 @@
   hosts: admin
   become: true
   gather_facts: false
-  vars:
-    stamp: "{{ lookup('pipe', 'date +%Y%m%d-%H%M%S') }}"
   tasks:
+    # set_fact evaluates once; a play variable would be re-evaluated (and change) at every use.
+    - name: Fix one timestamp for this run
+      ansible.builtin.set_fact:
+        stamp: "{{ lookup('pipe', 'date +%Y%m%d-%H%M%S') }}"
+      run_once: true
+
     - name: The port limit must already allow 80
       ansible.builtin.command: cat /proc/sys/net/ipv4/ip_unprivileged_port_start
       register: port_start
