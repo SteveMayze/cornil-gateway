@@ -20,3 +20,10 @@
         - {src: Caddyfile.j2, dest: Caddyfile}
         - {src: gateway.network.j2, dest: gateway.network}
         - {src: caddy.container.j2, dest: caddy.container}
+    - name: Make the portal output directory
+      ansible.builtin.file: {path: "{{ render_dir }}/portal", state: directory, mode: "0755"}
+    - name: Render the portal page
+      ansible.builtin.template:
+        src: portal/index.html.j2
+        dest: "{{ render_dir }}/portal/index.html"
+        mode: "0644"

@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<meta name="robots" content="noindex, nofollow">
+<title>Cornil</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%230f766e'/%3E%3Cpath d='M14 32 32 16l18 16v18H38V38H26v12H14z' fill='%23fff'/%3E%3C/svg%3E">
+<!-- Managed by cornil-gateway (ansible/templates/portal/index.html.j2). Do not edit on the server: changes are overwritten.
+     Self-contained on purpose: no scripts, no external fonts or images. -->
+<style>
+  :root {
+    --bg: #f4f6f8;
+    --surface: #ffffff;
+    --text: #1b2430;
+    --muted: #5b6776;
+    --border: #dde3ea;
+    --accent: #0f766e;
+    --accent-soft: #e2f3f1;
+    --shadow: 0 1px 2px rgba(16, 24, 40, 0.06), 0 4px 14px rgba(16, 24, 40, 0.06);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #10151b;
+      --surface: #19212a;
+      --text: #e8edf2;
+      --muted: #9aa7b5;
+      --border: #2a3541;
+      --accent: #5eead4;
+      --accent-soft: #163a37;
+      --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 4px 14px rgba(0, 0, 0, 0.35);
+    }
+  }
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    background: var(--bg);
+    color: var(--text);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    line-height: 1.5;
+  }
+  header, main, footer {
+    width: 100%;
+    max-width: 62rem;
+    margin: 0 auto;
+    padding-left: 1.25rem;
+    padding-right: 1.25rem;
+  }
+  header { padding-top: 3.5rem; padding-bottom: 1.5rem; }
+  h1 { margin: 0; font-size: clamp(2rem, 5vw, 2.75rem); letter-spacing: -0.02em; line-height: 1.1; }
+  .subtitle { margin: 0.5rem 0 0; color: var(--muted); font-size: 1.125rem; }
+  main { flex: 1; padding-bottom: 2rem; }
+  .apps {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(17rem, 1fr));
+    gap: 1rem;
+  }
+  .card {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    height: 100%;
+    padding: 1.25rem;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 0.875rem;
+    box-shadow: var(--shadow);
+    color: inherit;
+    text-decoration: none;
+    transition: transform 0.12s ease, border-color 0.12s ease;
+  }
+  .card:hover { transform: translateY(-2px); border-color: var(--accent); }
+  .card:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+  .icon {
+    display: grid;
+    place-items: center;
+    width: 3rem;
+    height: 3rem;
+    border-radius: 0.75rem;
+    background: var(--accent-soft);
+    font-size: 1.5rem;
+  }
+  .card h2 { margin: 0.25rem 0 0; font-size: 1.25rem; }
+  .card p { margin: 0; color: var(--muted); flex: 1; }
+  .open { margin-top: 0.5rem; color: var(--accent); font-weight: 600; }
+  footer { padding-top: 1rem; padding-bottom: 2rem; color: var(--muted); font-size: 0.875rem; }
+  @media (prefers-reduced-motion: reduce) {
+    .card { transition: none; }
+    .card:hover { transform: none; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>Cornil</h1>
+  <p class="subtitle">Home applications</p>
+</header>
+<main>
+  <ul class="apps" aria-label="Applications">
+{% for app in portal_apps %}
+    <li>
+      <a class="card" href="{{ app.path | e }}">
+        <span class="icon" aria-hidden="true">{{ app.icon | e }}</span>
+        <h2>{{ app.name | e }}</h2>
+        <p>{{ app.description | e }}</p>
+        <span class="open">Open &rarr;</span>
+      </a>
+    </li>
+{% endfor %}
+  </ul>
+</main>
+<footer>
+  {{ gateway_hostname | e }} &middot; Served by Caddy
+</footer>
+</body>
+</html>
