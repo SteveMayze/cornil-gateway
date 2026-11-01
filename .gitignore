@@ -26,3 +26,8 @@ data/
 .vscode/
 build/
 .venv-infra/
+
+# Python virtual environments
+.venv/
+.venv-infra/
+.venv-infra
