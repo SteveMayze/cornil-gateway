@@ -3,7 +3,7 @@
 The single owner of the Caddy reverse proxy on the home server `cornil` (`cornil.fritz.box`).
 It serves two Django apps over HTTPS:
 
-- `https://cornil.fritz.box/parts-db` (repo: SteveMayze/parts-db)
+- `https://cornil.fritz.box/parts-db` (repo: SteveMayze/parts-db; rootless container `parts-db-web`, reached by name on the `gateway` network)
 - `https://cornil.fritz.box/tax-healthcare` (repo: SteveMayze/Tax-and-KK-Tool)
 
 No other repository may contain Caddy configuration or write to the proxy's files.

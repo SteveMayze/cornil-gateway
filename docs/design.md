@@ -157,8 +157,7 @@ Internet-facing: nothing. Home network (LAN) sees only:  22 (SSH)   80, 443 (Cad
 
  device ──https──> Caddy (rootless container, user homeapps, network "gateway")
                      ├─ /tax-healthcare/*  ──> tax-healthcare-tool-web:8000   (same network, by name)
-                     └─ /parts-db/*        ──> host.containers.internal:8888  (until parts-db is rootless;
-                                              then <container name>:8000 on "gateway")
+                     └─ /parts-db/*        ──> parts-db-web:8000              (same network, by name; ADR 0003)
 ```
 - Gateway files on the server: `~/cornil-gateway/{config,caddy-data,caddy-config,backups}` and the units `~/.config/containers/systemd/{caddy.container,gateway.network}`, all owned by `homeapps`, written only by this repo.
 - One-time system changes (done by the owner with sudo): `/etc/sysctl.d/90-unprivileged-ports.conf`; the legacy Caddy stopped and archived under `/root/caddy-legacy-backup/`. Optional: `/etc/cornil/lan-ports.nft` and `cornil-lan-ports.service` (`docs/closing-plain-ports.md`).
@@ -166,4 +165,5 @@ Internet-facing: nothing. Home network (LAN) sees only:  22 (SSH)   80, 443 (Cad
 
 ## 11. G3 status
 - Tax upstream now by name (done, verified). parts-db's own redirects now carry `/parts-db/` (Part B works).
-- Open: 8890 (tax request), 8889 (owner decommissions the rootful copy), 8888 (firewall or rootless move).
+- parts-db now rootless: `partsdb_upstream: parts-db-web:8000` (ADR 0003, 2026-11-01). The sections above on `host.containers.internal:8888` describe the earlier rootful route and the test behind ADR 0001; they are history.
+- Open: 8890 (tax request), 8889 (owner decommissions the rootful copy), 8888 (the rootful parts-db container, stopped by the parts-db repo / owner; the gateway no longer uses it).

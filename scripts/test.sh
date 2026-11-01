@@ -52,6 +52,7 @@ else
   check "/tax-healthcare/x/ reaches the tax stand-in with the prefix stripped" "c $U/tax-healthcare/accounts/login/ | python3 -I -c 'import json,sys; d=json.load(sys.stdin); assert d[\"app\"]==\"tax\" and d[\"path\"]==\"/accounts/login/\"'"
   check "/parts-db/x reaches the parts-db stand-in with the prefix stripped" "c $U/parts-db/parts/ | python3 -I -c 'import json,sys; d=json.load(sys.stdin); assert d[\"app\"]==\"parts-db\" and d[\"path\"]==\"/parts/\"'"
   check "app sees Host cornil.fritz.box and X-Forwarded-Proto https" "c $U/tax-healthcare/ | python3 -I -c 'import json,sys; h=json.load(sys.stdin)[\"headers\"]; assert h[\"Host\"].startswith(\"cornil.fritz.box\") and h[\"X-Forwarded-Proto\"]==\"https\"'"
+  check "parts-db stand-in also sees Host cornil.fritz.box and X-Forwarded-Proto https" "c $U/parts-db/ | python3 -I -c 'import json,sys; h=json.load(sys.stdin)[\"headers\"]; assert h[\"Host\"].startswith(\"cornil.fritz.box\") and h[\"X-Forwarded-Proto\"]==\"https\"'"
   check "plain HTTP redirects to HTTPS" "[ \"\$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:18080/ -H 'Host: cornil.fritz.box')\" = 308 ]"
   check "no Strict-Transport-Security header (HSTS stays off)" "! c -I $U/ | grep -qi strict-transport"
   check "reload accepts the same file (what make deploy does)" "XDG_DATA_HOME=$tmp/data XDG_CONFIG_HOME=$tmp/conf caddy reload --config $tmp/trial/Caddyfile --adapter caddyfile"

@@ -10,7 +10,7 @@ Why close them: the gateway is the only front door that gives you HTTPS. The old
 |---|---|---|---|
 | 8890 | rootless tax app (`homeapps`) | Remove its host port. Caddy does not use it: it reaches the app by name on the `gateway` network (verified) | Tax repo session (request below) |
 | 8889 | old **rootful** tax app | Stop and remove the old rootful copy: the "Part B" and later "removal" sections of `podman-explained.md` (§7, §8). Needs sudo, your decision, and only after the final data copy was verified | You, in the tax repo's workflow |
-| 8888 | parts-db (rootful) | **Cannot be narrowed to localhost.** My test showed Caddy's route (`host.containers.internal`) fails if parts-db listens on `127.0.0.1` only. Either (a) move parts-db to rootless and onto the `gateway` network (the planned later step), or (b) block 8888 from the LAN with the host firewall below, which still lets Caddy reach it | parts-db session / you |
+| 8888 | parts-db (rootful, **no longer used by the gateway since ADR 0003**) | Closable now by the parts-db repo / you. Earlier finding: **cannot be narrowed to localhost while the gateway used it.** My test showed Caddy's route (`host.containers.internal`) fails if parts-db listens on `127.0.0.1` only. Either (a) move parts-db to rootless and onto the `gateway` network (the planned later step), or (b) block 8888 from the LAN with the host firewall below, which still lets Caddy reach it | parts-db session / you |
 
 Recommended order: tax 8890 first (no risk), then the firewall for 8888 and 8889 until they are gone for real, then parts-db to rootless and remove the firewall rule for it.
 
@@ -18,7 +18,7 @@ Recommended order: tax 8890 first (no risk), then the firewall for 8888 and 8889
 Paste `docs/prompts/TAX-CLOSE-PORT-REQUEST.md` into the tax session. In short: set `listen_address: 127.0.0.1` (the published port `8890` then listens on the server's own loopback only: the LAN is refused, `curl http://127.0.0.1:8890/health/` on the server still works for debugging) or remove `PublishPort` altogether; remove the plain-HTTP origin from `DJANGO_CSRF_TRUSTED_ORIGINS`; keep `DJANGO_BEHIND_TLS_PROXY=1`.
 
 ## parts-db (8888)
-Nothing to change in parts-db now: keep `listen_address` at its default (all interfaces). Narrowing it **now** would make `/parts-db/` return a gateway error. The rootless move later makes the rule below unnecessary: parts-db joins `gateway`, Caddy gets `partsdb_upstream: <container name>:8000`, and `listen_address` can close. That change belongs to this repo (`ansible/group_vars/all.yml`) and the parts-db repo, in that order.
+**Update 2026-11-01 (ADR 0003):** the gateway now reaches the rootless `parts-db-web` by name (`partsdb_upstream: parts-db-web:8000`), so it no longer uses port 8888. The rootful container on 8888 can now be closed by the parts-db repo / you (stop and remove it, or narrow it to `127.0.0.1`). Do that only after you have checked `/parts-db/` through the gateway, because the rollback value (`host.containers.internal:8888`) needs it running. Nothing has been applied here.
 
 ## Optional host firewall (proposal, needs your approval and sudo)
 
@@ -75,7 +75,7 @@ WantedBy=multi-user.target
 sudo systemctl daemon-reload                   # tell systemd about the new file
 sudo systemctl enable --now cornil-lan-ports   # load it now and at every boot
 ```
-Remember to remove the port from the rule when its app really stops listening, and delete the unit when parts-db is rootless.
+Remember to remove the port from the rule when its app really stops listening. For parts-db that is the `8888` entry in the `tcp dport { 8888, 8889, 8890 }` line: it may be removed once the rootful unit is stopped. Delete the unit when no port remains. Nothing was applied.
 
 ## How to verify the end state (from another LAN device)
 ```

@@ -14,9 +14,10 @@ caddy_image: docker.io/library/caddy:2.11.2
 # Where Caddy finds each app.
 # Tax app: by container name on the shared `gateway` network (the port INSIDE the container). Needs the tax
 #   unit to have Network=gateway.network. Before that it was host.containers.internal:8890.
-# parts-db: rootful, so reached through the host (decision: docs/decisions/0001). Needs parts-db to listen on
-#   all interfaces, not only 127.0.0.1.
+# parts-db: rootless container `parts-db-web` on the same `gateway` network, by name (ADR 0003).
+#   Rollback value (the old rootful container, reached through the host; needs parts-db to listen on all
+#   interfaces): host.containers.internal:8888
 tax_upstream: tax-healthcare-tool-web:8000
-partsdb_upstream: host.containers.internal:8888
+partsdb_upstream: parts-db-web:8000
 
 caddy_data_backups_to_keep: 7
