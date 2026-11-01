@@ -10,6 +10,17 @@ No other repository may contain Caddy configuration or write to the proxy's file
 
 **Status:** live. The gateway serves both apps on ports 80 and 443. Closing the old plain-HTTP ports is described in `docs/closing-plain-ports.md`; recovery in `docs/recovery.md`.
 
+## The portal page
+`https://cornil.fritz.box/` shows a small page that links to each application (ADR 0004). Any other path that is not an app returns 404.
+
+To add an application to the page:
+1. In `ansible/templates/Caddyfile.j2`, add its `redir` line and `handle_path` block (copy the existing two), and add its `*_upstream` variable to `ansible/group_vars/all.yml`.
+2. In the same file, add one entry to `portal_apps` (name, path, icon, description). There is a commented example.
+3. `make check` fails if a listed path has no route, no redirect or no link on the page.
+4. `make deploy`. Caddy is reloaded in place; nothing restarts.
+
+To look at the page without a server: `make render`, then open `build/portal/index.html` in a browser.
+
 ## Where to read
 - `CLAUDE.md`: secrets, privacy and working rules.
 - `docs/prompts/GATEWAY.md`: the task definition (Part A is this repo).
@@ -28,7 +39,7 @@ Routine commands use SSH as the service user and never ask for the sudo password
 
     make deploy              # install or update Caddy (add HTTP_PORT=8080 HTTPS_PORT=8443 for the trial ports)
     make status              # read-only overview
-    make smoke               # end-to-end check through the gateway
+    make smoke               # end-to-end check through the gateway (needs local/cornil-root.crt: make root-cert)
     make root-cert           # fetch the PUBLIC root certificate; install it on devices (docs/trust-root-cert.md)
     make backup-caddy-data   # back up the CA on the server
     make restore-drill BACKUP=<name>       # prove a backup is usable (touches nothing live)
