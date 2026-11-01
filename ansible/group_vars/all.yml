@@ -21,3 +21,26 @@ tax_upstream: tax-healthcare-tool-web:8000
 partsdb_upstream: parts-db-web:8000
 
 caddy_data_backups_to_keep: 7
+
+# The portal page served at https://<hostname>/ (ADR 0004).
+# Where Caddy finds the page INSIDE the container. deploy.yml writes it to <gateway_home>/config/portal/,
+# and <gateway_home>/config is already mounted read-only at /etc/caddy, so no unit change is needed.
+gateway_portal_dir: /etc/caddy/portal
+
+# One entry per application shown on the portal page. `path` must end in a slash and must match a route in
+# ansible/templates/Caddyfile.j2 (scripts/test.sh checks this). `icon` is a short emoji or a few characters.
+# To add an app: add its handle_path block and upstream variable to the Caddyfile template, then add an entry here.
+portal_apps:
+  - name: Parts DB
+    path: /parts-db/
+    icon: "🔩"
+    description: Electronics parts on hand and where they are stored.
+  - name: Tax & Healthcare
+    path: /tax-healthcare/
+    icon: "🧾"
+    description: Multi-country income overview for health insurance and the German tax return.
+  # Example of a third app (remove the leading "# " and add its route in the Caddyfile template):
+  # - name: Example App
+  #   path: /example-app/
+  #   icon: "🏠"
+  #   description: One line saying what it is for.

@@ -73,6 +73,22 @@
         dest: "{{ gateway_home }}/config/Caddyfile.candidate"
         mode: "0600"
 
+    # ---- the portal page (ADR 0004) ----------------------------------------------------------------
+    # Written BEFORE the Caddyfile that points at it goes live, so Caddy never refers to a missing file.
+    # It sits inside the folder that is already mounted read-only at /etc/caddy, so no unit change and no
+    # restart are needed; Caddy reads the file on each request, so a page-only change needs no reload either.
+    - name: Make the portal folder (private to the service user, like the rest of config/)
+      ansible.builtin.file:
+        path: "{{ gateway_home }}/config/portal"
+        state: directory
+        mode: "0700"
+
+    - name: Install the portal page
+      ansible.builtin.template:
+        src: portal/index.html.j2
+        dest: "{{ gateway_home }}/config/portal/index.html"
+        mode: "0600"
+
     - name: Validate the candidate with Caddy itself, in a throw-away container
       ansible.builtin.command: >-
         podman run --rm --network none --tmpfs /tmp

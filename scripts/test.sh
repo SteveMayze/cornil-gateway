@@ -26,6 +26,26 @@ render "$tmp/std"
 check "Caddyfile uses 80/443 by default" "grep -q 'http_port 80' $tmp/std/Caddyfile && grep -q 'https_port 443' $tmp/std/Caddyfile"
 check "Caddyfile has tls internal and no HSTS" "grep -q 'tls internal' $tmp/std/Caddyfile && ! grep -qi strict-transport $tmp/std/Caddyfile"
 check "Caddyfile has no API token or Authorization route" "! grep -qiE 'token|Authorization|TEXTECK|local_certs' $tmp/std/Caddyfile"
+check "Caddyfile serves the portal from /etc/caddy/portal (inside the existing read-only mount)" "grep -q 'root \\* /etc/caddy/portal' $tmp/std/Caddyfile"
+check "portal page is rendered, with no leftover template syntax" "[ -s $tmp/std/portal/index.html ] && ! grep -qE '\\{\\{|\\{%' $tmp/std/portal/index.html"
+check "portal page loads nothing external (no scripts, only the SVG namespace URL)" "python3 -I -c \"
+import re
+h = open('$tmp/std/portal/index.html').read()
+assert '<script' not in h.lower()
+assert not [u for u in re.findall(r'https?://[^\\s\\\"\\'<>)]+', h) if u != 'http://www.w3.org/2000/svg']
+\""
+check "every portal_apps path has a matching route in the Caddyfile" "python3 -I -c \"
+import sys, yaml
+apps = yaml.safe_load(open('ansible/group_vars/all.yml'))['portal_apps']
+cf = open('$tmp/std/Caddyfile').read()
+assert apps, 'portal_apps is empty'
+for a in apps:
+    p = a['path']
+    assert p.startswith('/') and p.endswith('/'), p
+    assert 'handle_path ' + p + '*' in cf, 'no handle_path for ' + p
+    assert 'redir ' + p.rstrip('/') + ' ' + p + ' 308' in cf, 'no redirect for ' + p
+    assert 'href=\\\"' + p + '\\\"' in open('$tmp/std/portal/index.html').read(), 'page lacks link ' + p
+\""
 Q=$tmp/std/caddy.container
 check "unit: rootless-safe hardening" "grep -q '^ReadOnly=true' $Q && grep -q '^NoNewPrivileges=true' $Q && grep -q '^DropCapability=ALL' $Q"
 check "unit: joins the gateway network" "grep -q '^Network=gateway.network' $Q"
@@ -38,7 +58,8 @@ if ! command -v caddy >/dev/null; then
   echo "  SKIP  caddy not installed locally (brew install caddy). Behaviour tests NOT run."; fail=1
 else
   render "$tmp/trial" -e gateway_http_port=18080 -e gateway_https_port=18443 \
-         -e tax_upstream=127.0.0.1:18882 -e partsdb_upstream=127.0.0.1:18881
+         -e tax_upstream=127.0.0.1:18882 -e partsdb_upstream=127.0.0.1:18881 \
+         -e gateway_portal_dir=$tmp/trial/portal
   check "caddy validate (rendered Caddyfile)" "caddy validate --config $tmp/trial/Caddyfile --adapter caddyfile"
   python3 -I scripts/echo_server.py 18881 parts-db & python3 -I scripts/echo_server.py 18882 tax &
   XDG_DATA_HOME=$tmp/data XDG_CONFIG_HOME=$tmp/conf caddy run --config $tmp/trial/Caddyfile --adapter caddyfile >"$tmp/caddy.log" 2>&1 &
@@ -46,7 +67,11 @@ else
   cert=$tmp/data/caddy/pki/authorities/local/root.crt
   c() { curl -s --cacert "$cert" --resolve cornil.fritz.box:18443:127.0.0.1 "$@"; }
   U=https://cornil.fritz.box:18443
-  check "/ answers the gateway page over HTTPS with the internal CA" "[ \"\$(c $U/)\" = 'cornil: parts-db and tax-healthcare' ]"
+  check "/ answers 200 text/html over HTTPS with the internal CA" "[ \"\$(c -o /dev/null -w '%{http_code} %{content_type}' $U/)\" = '200 text/html; charset=utf-8' ]"
+  check "/ is the portal page with links to both apps" "c $U/ | grep -q '<title>Cornil</title>' && c $U/ | grep -q 'href=\"/parts-db/\"' && c $U/ | grep -q 'href=\"/tax-healthcare/\"'"
+  check "/ carries the security headers" "h=\$(c -I $U/ | tr -d '\\r' | tr 'A-Z' 'a-z'); echo \"\$h\" | grep -q '^x-content-type-options: nosniff' && echo \"\$h\" | grep -q '^referrer-policy: no-referrer' && echo \"\$h\" | grep -q '^content-security-policy: default-src .none.'"
+  check "/index.html is not a second way in (404)" "[ \"\$(c -o /dev/null -w '%{http_code}' $U/index.html)\" = 404 ]"
+  check "an unknown path /nope is 404, not the portal" "[ \"\$(c -o /dev/null -w '%{http_code}' $U/nope)\" = 404 ]"
   check "/parts-db -> 308 /parts-db/" "[ \"\$(c -o /dev/null -w '%{http_code} %{redirect_url}' $U/parts-db)\" = '308 $U/parts-db/' ]"
   check "/tax-healthcare -> 308 /tax-healthcare/" "[ \"\$(c -o /dev/null -w '%{http_code}' $U/tax-healthcare)\" = 308 ]"
   check "/tax-healthcare/x/ reaches the tax stand-in with the prefix stripped" "c $U/tax-healthcare/accounts/login/ | python3 -I -c 'import json,sys; d=json.load(sys.stdin); assert d[\"app\"]==\"tax\" and d[\"path\"]==\"/accounts/login/\"'"
