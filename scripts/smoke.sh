@@ -16,7 +16,11 @@ req() { curl -sS --max-time 10 --cacert "$CERT" -o "${TMPDIR:-/tmp}"/smoke.$$ -w
 
 echo "Gateway at $base"
 out=$(req "$base/"); code=${out%% *}
-if [ "$code" = 200 ] && grep -q "parts-db and tax-healthcare" "${TMPDIR:-/tmp}"/smoke.$$; then ok "/ answers 200 with the gateway page (certificate trusted)"; else bad "/ -> $out"; fi
+page="${TMPDIR:-/tmp}"/smoke.$$
+if [ "$code" = 200 ] && grep -q '<title>Cornil</title>' "$page" \
+   && grep -q 'href="/parts-db/"' "$page" && grep -q 'href="/tax-healthcare/"' "$page"; then
+  ok "/ answers 200 with the portal page and links to both apps (certificate trusted)"
+else bad "/ -> $out (expected the portal page: if you still see the old one-line text, run make deploy)"; fi
 
 out=$(req "$base/parts-db"); code=${out%% *}
 [ "$code" = 308 ] && ok "/parts-db redirects (308) to /parts-db/" || bad "/parts-db -> $out"
