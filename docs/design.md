@@ -166,4 +166,4 @@ Internet-facing: nothing. Home network (LAN) sees only:  22 (SSH)   80, 443 (Cad
 ## 11. G3 status
 - Tax upstream now by name (done, verified). parts-db's own redirects now carry `/parts-db/` (Part B works).
 - parts-db now rootless: `partsdb_upstream: parts-db-web:8000` (ADR 0003, 2026-11-01). The sections above on `host.containers.internal:8888` describe the earlier rootful route and the test behind ADR 0001; they are history.
-- Open: 8890 (tax request), 8889 (owner decommissions the rootful copy), 8888 (the rootful parts-db container, stopped by the parts-db repo / owner; the gateway no longer uses it).
+- Open: 8890 (tax request), 8889 (owner decommissions the rootful tax copy), 8891 (rootless parts-db publishes it; parts-db repo). 8888: closed, rootful parts-db stopped 2026-11-01.
