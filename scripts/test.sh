@@ -78,6 +78,7 @@ check "pg-create-app: validates the app name and never sets a password on an exi
 check "pg-create-app and postgres-deploy: secret tasks use no_log" "[ \"\$(grep -c 'no_log: true' ansible/pg-create-app.yml)\" -ge 2 ] && [ \"\$(grep -c 'no_log: true' ansible/postgres-deploy.yml)\" -ge 1 ]"
 check "postgres-deploy checks that /u01 is a mount point before writing" "grep -q 'mountpoint -q' ansible/postgres-deploy.yml"
 check "pg-create-app makes the role a non-superuser, revokes PUBLIC connect" "grep -q 'NOSUPERUSER' ansible/pg-create-app.yml && grep -q 'REVOKE ALL ON DATABASE' ansible/pg-create-app.yml"
+check "pg-create-app also closes the postgres maintenance database to PUBLIC" "grep -q 'REVOKE ALL ON DATABASE postgres FROM PUBLIC' ansible/pg-create-app.yml"
 check "quadlet-dryrun script sends the postgres and db units too" "grep -q 'postgres.container' scripts/quadlet-dryrun.sh && grep -q 'db.network' scripts/quadlet-dryrun.sh"
 
 echo "3. Caddy runs the rendered Caddyfile (real Caddy, stand-in apps)"

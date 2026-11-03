@@ -91,6 +91,12 @@
         -c "REVOKE ALL ON DATABASE {{ app }} FROM PUBLIC"
       changed_when: false
 
+    - name: App roles may not open the maintenance database either (revoke CONNECT on `postgres` from PUBLIC; the superuser is unaffected)
+      ansible.builtin.command: >-
+        podman exec postgres psql -U postgres -d postgres -X -q -v ON_ERROR_STOP=1
+        -c "REVOKE ALL ON DATABASE postgres FROM PUBLIC"
+      changed_when: false
+
     - name: Verify the role is an ordinary login (not a superuser) and owns the database
       ansible.builtin.command: >-
         podman exec postgres psql -U postgres -d postgres -X -tA -F ' '
