@@ -1,0 +1,64 @@
+# Managed by cornil-gateway (ansible/postgres-deploy.yml). Do not edit by hand: changes are overwritten on the next deploy.
+# A ROOTLESS Quadlet file, run by the service user's systemd (systemctl --user). ADR 0005 and 0006.
+[Unit]
+Description=PostgreSQL shared database for cornil (rootless Podman Quadlet)
+# Extra ordering at boot only. It does NOT block the start in a user unit (tested, ADR 0006); the real guard is ExecStartPre below.
+RequiresMountsFor={{ u01_mount }}
+
+[Container]
+Image={{ postgres_image }}
+ContainerName=postgres
+Network=db.network
+# Deliberately no port is published to the host: the database is reachable only from containers on the db network.
+# The postgres user in the image is {{ postgres_uid }}:{{ postgres_gid }}; keep-id makes that the service user on the host.
+UserNS=keep-id:uid={{ postgres_uid }},gid={{ postgres_gid }}
+User={{ postgres_uid }}:{{ postgres_gid }}
+Volume={{ postgres_data_dir }}:/var/lib/postgresql/data
+Volume={{ platform_home }}/postgres:/etc/cornil-postgres:ro
+Environment=PGDATA=/var/lib/postgresql/data/pgdata
+# Checksums let PostgreSQL notice silent disk corruption. Only takes effect when the cluster is first created.
+Environment=POSTGRES_INITDB_ARGS=--data-checksums
+# The superuser password is a Podman secret, mounted as a file. It is used only when the cluster is first created.
+Environment=POSTGRES_PASSWORD_FILE=/run/secrets/postgres-superuser-password
+Secret=postgres-superuser-password,type=mount,uid={{ postgres_uid }},gid={{ postgres_gid }},mode=0400
+# Settings. fsync, synchronous_commit and full_page_writes are spelled out to show they stay ON.
+Exec=postgres \
+  -c listen_addresses=* \
+  -c hba_file=/etc/cornil-postgres/pg_hba.conf \
+  -c password_encryption=scram-sha-256 \
+  -c max_connections={{ postgres_max_connections }} \
+  -c shared_buffers={{ postgres_shared_buffers }} \
+  -c effective_cache_size={{ postgres_effective_cache_size }} \
+  -c work_mem={{ postgres_work_mem }} \
+  -c maintenance_work_mem={{ postgres_maintenance_work_mem }} \
+  -c fsync=on \
+  -c synchronous_commit=on \
+  -c full_page_writes=on
+ReadOnly=true
+Tmpfs=/tmp
+Tmpfs=/var/run/postgresql:rw,mode=1777
+ShmSize={{ postgres_shm_size }}
+NoNewPrivileges=true
+DropCapability=ALL
+PodmanArgs=--memory={{ postgres_memory_limit }} --pids-limit={{ postgres_pids_limit }}
+# pg_isready asks the server whether it accepts connections; it needs no password.
+HealthCmd=pg_isready -U postgres -d postgres
+HealthInterval=30s
+HealthTimeout=5s
+HealthRetries=3
+HealthStartPeriod=60s
+# The image stops PostgreSQL with SIGINT (fast shutdown). Give it time to finish writing.
+StopTimeout={{ postgres_stop_timeout }}
+
+[Service]
+# The mount guard (ADR 0006): refuse to start against the empty mount point if the USB disk is missing,
+# and keep trying until it appears.
+ExecStartPre=/usr/bin/mountpoint -q {{ u01_mount }}
+Restart=always
+RestartSec=10
+StartLimitIntervalSec=0
+TimeoutStartSec=300
+TimeoutStopSec={{ postgres_stop_timeout + 20 }}
+
+[Install]
+WantedBy=default.target

@@ -4,7 +4,7 @@
 VENV      := .venv-infra
 ANSIBLE   := ANSIBLE_CONFIG=ansible/ansible.cfg $(VENV)/bin/ansible-playbook -i local/inventory.ini $(if $(wildcard local/vars.yml),-e @local/vars.yml) $(if $(HTTP_PORT),-e gateway_http_port=$(HTTP_PORT)) $(if $(HTTPS_PORT),-e gateway_https_port=$(HTTPS_PORT))
 
-.PHONY: restore-drill restore-caddy-data quadlet-dryrun deploy-check help hooks ansible-setup syntax check test secrets-scan render deploy status backup-caddy-data root-cert smoke bootstrap-ports cutover rollback-legacy
+.PHONY: pg-deploy pg-deploy-check pg-status pg-create-app restore-drill restore-caddy-data quadlet-dryrun deploy-check help hooks ansible-setup syntax check test secrets-scan render deploy status backup-caddy-data root-cert smoke bootstrap-ports cutover rollback-legacy
 
 help:  ## Show this list
 	@grep -E '^[a-z-]+:.*##' $(MAKEFILE_LIST) | sed 's/:.*## /\t/'
@@ -20,7 +20,7 @@ secrets-scan:  ## Scan the whole git history and working tree for secrets
 	gitleaks dir --redact --verbose .
 
 syntax:  ## Check that every playbook is well-formed; changes nothing
-	for p in deploy backup-caddy-data status root-cert restore-caddy-data bootstrap-ports cutover rollback-legacy render; do \
+	for p in deploy backup-caddy-data status root-cert restore-caddy-data bootstrap-ports cutover rollback-legacy render postgres-deploy postgres-status pg-create-app; do \
 	  ANSIBLE_CONFIG=ansible/ansible.cfg $(VENV)/bin/ansible-playbook -i local/inventory.example.ini --syntax-check ansible/$$p.yml || exit 1; done
 
 test:  ## Run the tests on the real rendered files (needs a local caddy: brew install caddy)
@@ -58,6 +58,19 @@ cutover:  ## [SUDO] Back up and stop the legacy Caddy so the new one can take po
 
 rollback-legacy:  ## [SUDO] Put the legacy Caddy back and stop the new one
 	$(ANSIBLE) -K ansible/rollback-legacy.yml
+
+pg-deploy:  ## Install or update the shared PostgreSQL on the server (no sudo; creates an empty server)
+	$(ANSIBLE) ansible/postgres-deploy.yml
+
+pg-deploy-check:  ## Rehearse pg-deploy without changing anything (ansible --check --diff)
+	$(ANSIBLE) ansible/postgres-deploy.yml --check --diff
+
+pg-status:  ## Read-only overview of PostgreSQL: health, databases, roles, secret names (no values)
+	$(ANSIBLE) ansible/postgres-status.yml
+
+pg-create-app:  ## Add an app's database, role and password secret (idempotent). make pg-create-app APP=partsdb
+	@test -n "$(APP)" || { echo "Give APP=<name>, for example: make pg-create-app APP=partsdb"; exit 1; }
+	$(ANSIBLE) ansible/pg-create-app.yml -e app=$(APP)
 
 quadlet-dryrun:  ## Ask the server's Quadlet generator to translate our unit files (prints only)
 	scripts/quadlet-dryrun.sh

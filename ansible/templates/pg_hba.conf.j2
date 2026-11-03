@@ -1,0 +1,10 @@
+# Managed by cornil-gateway (ansible/postgres-deploy.yml). Do not edit by hand.
+# Who may connect, and how they prove it. The first matching line wins.
+# TYPE  DATABASE  USER      ADDRESS            METHOD
+# Inside the container, the operating-system user `postgres` is the database superuser (used by the health
+# check, the first-start setup and `make pg-create-app`). No password is involved and nothing is reachable from outside.
+local   all       postgres                     peer
+local   all       all                          scram-sha-256
+# From other containers: only the db network, only with a password checked as scram-sha-256.
+host    all       all       {{ db_subnet }}    scram-sha-256
+# Everything else is refused (there is no catch-all line).

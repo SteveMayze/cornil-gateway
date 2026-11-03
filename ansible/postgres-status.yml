@@ -1,0 +1,30 @@
+---
+# Read-only overview of the shared PostgreSQL. Runs as the service user, no sudo. Prints no secret values.
+- name: PostgreSQL status
+  hosts: gateway
+  gather_facts: false
+  tasks:
+    - name: Collect
+      ansible.builtin.shell: |
+        echo "u01 mounted: $(mountpoint -q {{ u01_mount }} && echo yes || echo NO)"
+        echo "unit: $(systemctl --user is-active postgres.service 2>&1)"
+        echo "container: $(podman ps -a --filter name=^postgres$ --format '{{ '{{' }}.Status{{ '}}' }}')"
+        echo "health: $(podman inspect --format '{{ '{{' }}.State.Health.Status{{ '}}' }}' postgres 2>&1)"
+        echo "published ports: $(podman port postgres 2>&1 | wc -l) (must be 0)"
+        echo "network: $(podman network ls --format '{{ '{{' }}.Name{{ '}}' }}' | grep -x {{ db_network_name }} || echo missing)"
+        echo "secrets (names only): $(podman secret ls --format '{{ '{{' }}.Name{{ '}}' }}' | tr '\n' ' ')"
+        echo "data folder size: $(du -sh {{ postgres_data_dir }} 2>/dev/null | cut -f1)"
+        echo "server: $(podman exec postgres psql -U postgres -d postgres -X -tA -c 'show server_version' 2>&1)"
+        echo "locale (LC_COLLATE): $(podman exec postgres psql -U postgres -d postgres -X -tA -c 'show lc_collate' 2>&1)"
+        echo "durability: $(podman exec postgres psql -U postgres -d postgres -X -tA -c "select current_setting('fsync')||' fsync, '||current_setting('synchronous_commit')||' synchronous_commit, '||current_setting('full_page_writes')||' full_page_writes'" 2>&1)"
+        echo "databases (name / owner):"
+        podman exec postgres psql -U postgres -d postgres -X -tA -F ' / ' -c "select datname, pg_get_userbyid(datdba) from pg_database where not datistemplate order by 1" 2>&1
+        echo "roles (name / superuser / can log in):"
+        podman exec postgres psql -U postgres -d postgres -X -tA -F ' / ' -c "select rolname, rolsuper, rolcanlogin from pg_roles where rolname !~ '^pg_' order by 1" 2>&1
+      args:
+        executable: /bin/bash
+      register: out
+      changed_when: false
+    - name: Show
+      ansible.builtin.debug:
+        msg: "{{ out.stdout_lines }}"

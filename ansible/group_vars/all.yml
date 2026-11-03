@@ -44,3 +44,37 @@ portal_apps:
   #   path: /example-app/
   #   icon: "🏠"
   #   description: One line saying what it is for.
+
+# ---- Shared platform: PostgreSQL (ADR 0005 and 0006) -------------------------------------------------------
+# Official image, pinned to an exact tag (never `latest`). The `-trixie` variant is Debian 13, like the host.
+# Changing the tag to another PATCH release of 17 is safe; read the release notes first. A new MAJOR version
+# is NOT an in-place change: it needs a dump and restore. The image's operating system decides the text
+# sort order (en_US.utf8), so after any change that moves to a new OS release run REINDEX (docs/postgres.md).
+postgres_image: docker.io/library/postgres:17.11-trixie
+
+# The `postgres` user inside the official image is uid/gid 999. UserNS=keep-id maps it to the service user, so
+# the files on /u01 belong to that user on the host.
+postgres_uid: 999
+postgres_gid: 999
+
+# Folders. The data lives on the USB disk; the small config (pg_hba.conf) stays on the eMMC.
+u01_mount: /u01
+postgres_data_dir: /u01/data/postgres
+postgres_backup_dir: /u01/data/backups/postgres
+
+# The private `db` network. The subnet is fixed so pg_hba.conf can accept connections from exactly this range.
+# It must not overlap the `gateway` network or the home LAN.
+db_network_name: db
+db_subnet: 10.89.100.0/24
+
+# Sized for 3.7 GB of RAM shared with Caddy and two Django apps. Durability settings (fsync, synchronous_commit,
+# full_page_writes) are deliberately NOT here as tunables: they stay on because the disk is bus-powered USB.
+postgres_memory_limit: 1g
+postgres_pids_limit: 200
+postgres_shm_size: 128m
+postgres_max_connections: 50
+postgres_shared_buffers: 256MB
+postgres_effective_cache_size: 768MB
+postgres_work_mem: 8MB
+postgres_maintenance_work_mem: 64MB
+postgres_stop_timeout: 110
