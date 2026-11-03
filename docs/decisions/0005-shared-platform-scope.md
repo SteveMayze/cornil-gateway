@@ -39,5 +39,8 @@ No repo writes into another repo's files, units, folders or secrets on the serve
 - Server: Debian 13, Podman 5.4.2 (supports `Secret=` in Quadlet), systemd 257, 4 cores, 3.7 GB RAM, eMMC 18 GB free, `/u01` empty and mounted ext4 `noatime`; no name collisions for `postgres.container` or `db.network`; no USB resets or I/O errors in `dmesg`.
 - A stale rootful `tax-healthcare-tool-web` (system service, port 8889, data under `/var/lib/tax-healthcare-tool`, database unchanged since 2026-10-19) still runs. The live Tax tool is the rootless one and is the migration source. It is not touched by this ADR.
 
+## Phase U2 results (2026-11-03)
+PostgreSQL 17.11 was deployed with `make pg-deploy`; `partsdb` and `taxtool` were created with `make pg-create-app`. A throw-away container on `db` connected as each role to its own database, was refused on the other's database and on `postgres`, and was refused for an unknown role and for a wrong password. The isolation test found that app roles could still open the `postgres` maintenance database through the default PUBLIC grant; `pg-create-app` now revokes it. A canary row in a scratch database survived a service restart and a server reboot (`/u01` mounted by itself, no recovery messages, `dmesg` clean); the scratch database was then dropped, the one `DROP` of the phase. Port 5432 is not reachable from the owner's Mac.
+
 ## Not verified here
 Nothing is deployed. The contract is confirmed against the server's current state (Phase U0 findings), not against a running PostgreSQL.
