@@ -65,7 +65,7 @@ Symptoms: `make pg-status` says "u01 mounted: NO"; the apps are down (they refus
 `make pg-status` shows the newest dump per database and its age in hours; anything over about 30 hours is late. Run `make pg-backup-now`: it prints `DUMP_OK` lines or the error. The usual causes are `/u01` not mounted (7.1) and PostgreSQL not healthy. The timer catches up by itself after downtime (`Persistent=true`).
 
 ### 7.3 Proving a backup works: the restore drill (quarterly rehearsal)
-Run `make pg-restore-drill` (all app databases) or `make pg-restore-drill DB=partsdb`. It restores the newest dump into a throw-away database, compares row counts with the dump, drops only that database and prints `DRILL_OK partsdb <dump name>`. Success looks like "row counts match for N tables with data" and `DRILL_OK`. If it prints `DRILL_FAILED`, the live database is untouched; keep the line that says which table differs and tell me. The full quarterly checklist (including an offsite restore) is written in Phase U4.
+Run `make pg-restore-drill` (all app databases) or `make pg-restore-drill DB=partsdb`. It restores the newest dump into a throw-away database, compares row counts with the dump, drops only that database and prints `DRILL_OK partsdb <dump name>`. Success looks like "row counts match for N tables" and `DRILL_OK`. If it prints `DRILL_FAILED`, the live database is untouched; keep the line that says which table differs and tell me. The full quarterly checklist (including an offsite restore) is written in Phase U4.
 
 ### 7.4 Putting an older state back: restoring a database from a dump
 Use this when data was damaged or deleted. **Stop the app that uses the database first** (for example `systemctl --user stop parts-db-web.service` as the service user).
