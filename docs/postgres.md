@@ -29,7 +29,7 @@ In the app's own Quadlet unit (in the app's repo, not here):
     Secret=partsdb-db-password,type=env,target=DJANGO_DB_PASSWORD
     Environment=DJANGO_DB_HOST=postgres  DJANGO_DB_PORT=5432  DJANGO_DB_NAME=partsdb  DJANGO_DB_USER=partsdb
 
-(one `Environment=` line per variable in the real file). If `DJANGO_DB_HOST` is not set, the app uses SQLite as before. The unit also needs the `/u01` guard from ADR 0006 and to start after `postgres.service`.
+(one `Environment=` line per variable in the real file). If `DJANGO_DB_HOST` is not set, the app uses SQLite as before. The unit also needs the `/u01` guard from ADR 0006 and `Wants=postgres.service` plus `After=postgres.service` (not `Requires=`, so restarting PostgreSQL does not restart the app).
 
 ## How to add an app (for example Humbser)
 1. `make pg-create-app APP=humbser`
