@@ -28,7 +28,7 @@ No repo writes into another repo's files, units, folders or secrets on the serve
 ```
 5. **Stays on the eMMC:** each app's `config/env`, Caddy's own data (`~/cornil-gateway`), the Podman image storage and the Podman secrets (they live inside the image storage folder). Builds use `/u01` for temporary files (see ADR 0006).
 6. **Database:** container `postgres` on the Podman network `db`, not published on the host, official image pinned to an exact tag, `scram-sha-256` only; one database and one non-superuser role per app (`partsdb`, `taxtool`, later `humbser`).
-7. **Apps** join `db.network` in addition to `gateway.network`, start after `postgres.service`, and carry the `/u01` guard from ADR 0006. If `DJANGO_DB_HOST` is unset an app uses SQLite as today.
+7. **Apps** join `db.network` in addition to `gateway.network`, start after `postgres.service` (`Wants=` plus `After=`, not `Requires=`, so a PostgreSQL restart does not restart the app), and carry the `/u01` guard from ADR 0006. If `DJANGO_DB_HOST` is unset an app uses SQLite as today.
 
 ## Consequences
 - `CLAUDE.md` ("What this repository is", "Not in scope") is amended; the secrets rules apply to the new area too (database passwords exist only as Podman secrets generated on the server).
