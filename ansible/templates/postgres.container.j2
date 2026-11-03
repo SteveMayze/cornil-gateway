@@ -36,7 +36,7 @@ Exec=postgres \
   -c full_page_writes=on
 ReadOnly=true
 Tmpfs=/tmp
-Tmpfs=/var/run/postgresql:rw,mode=1777
+Tmpfs=/run/postgresql:rw,mode=1777
 ShmSize={{ postgres_shm_size }}
 NoNewPrivileges=true
 DropCapability=ALL
