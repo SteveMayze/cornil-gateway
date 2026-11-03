@@ -1,3 +1,12 @@
 # Copy to local/vars.yml (git-ignored). Optional per-machine overrides of ansible/group_vars/all.yml.
 # Fake example values only.
 # tax_upstream: tax-healthcare-tool-web:8000
+
+# ---- Offsite backup (Phase U3/U4). Copy to local/vars.yml and edit. Fake example values only. ----
+# restic_repository: sftp:example-user@192.0.2.20:/backups/cornil          # SFTP target on another machine
+# restic_repository: s3:https://s3.example.invalid/example-bucket/cornil   # S3-compatible bucket
+# restic_extra_secrets:                                                    # only for targets that need them (S3)
+#   - {secret: restic-s3-access-key, env: AWS_ACCESS_KEY_ID}
+#   - {secret: restic-s3-secret-key, env: AWS_SECRET_ACCESS_KEY}
+# restic_ssh_dir: /home/example-user/cornil-platform/restic-ssh           # SFTP only: holds the key and known_hosts
+# disk_smart_long_test: true                                              # monthly SMART long self-test, if you approve it

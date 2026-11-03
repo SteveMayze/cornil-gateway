@@ -1,0 +1,67 @@
+---
+# Installs the nightly PostgreSQL dump: the helper scripts, a user service and a user timer. Runs as the service
+# user: no sudo. Safe to repeat. Does not run a dump (use `make pg-backup-now`) and does not touch the database.
+- name: Install the nightly PostgreSQL dump (scripts, service, timer)
+  hosts: gateway
+  gather_facts: true
+  vars:
+    platform_home: "{{ ansible_facts['user_dir'] }}/cornil-platform"
+    systemd_user_dir: "{{ ansible_facts['user_dir'] }}/.config/systemd/user"
+  tasks:
+    - name: Check that /u01 is a real mounted disk, not the empty folder
+      ansible.builtin.command: mountpoint -q {{ u01_mount }}
+      changed_when: false
+      check_mode: false
+      register: u01
+      failed_when: false
+
+    - name: Stop here if /u01 is not mounted
+      ansible.builtin.assert:
+        that: u01.rc == 0
+        fail_msg: "{{ u01_mount }} is not a mounted disk. Nothing was written (see docs/recovery.md)."
+
+    - name: Create the folders (the scripts live on the eMMC, the dumps on /u01)
+      ansible.builtin.file:
+        path: "{{ item.path }}"
+        state: directory
+        mode: "{{ item.mode }}"
+      loop:
+        - {path: "{{ platform_home }}", mode: "0700"}
+        - {path: "{{ platform_home }}/bin", mode: "0700"}
+        - {path: "{{ postgres_backup_dir }}", mode: "0700"}
+        - {path: "{{ systemd_user_dir }}", mode: "0755"}
+
+    - name: Install the backup scripts
+      ansible.builtin.copy:
+        src: "pgtools/{{ item }}"
+        dest: "{{ platform_home }}/bin/{{ item }}"
+        mode: "0700"
+      loop: [pg-lib.sh, pg-dump.sh, pg-retention.sh, pg-restore-drill.sh, pg-restore.sh]
+
+    - name: Install the dump service and timer
+      ansible.builtin.template:
+        src: "{{ item }}.j2"
+        dest: "{{ systemd_user_dir }}/{{ item }}"
+        mode: "0644"
+      loop: [pg-dump.service, pg-dump.timer]
+      register: units
+
+    - name: Let systemd read the new unit files
+      ansible.builtin.systemd:
+        scope: user
+        daemon_reload: true
+      when: units.changed
+
+    - name: Enable and start the timer (it runs the dump every night; Persistent=true catches up after downtime)
+      ansible.builtin.systemd:
+        scope: user
+        name: pg-dump.timer
+        enabled: true
+        state: started
+      when: not ansible_check_mode
+
+    - name: Summary
+      ansible.builtin.debug:
+        msg: >-
+          The nightly dump is installed ({{ pg_backup_calendar }}, keeping {{ pg_backup_keep_daily }} daily and
+          {{ pg_backup_keep_monthly }} monthly). Take one now with: make pg-backup-now

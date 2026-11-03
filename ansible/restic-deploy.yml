@@ -1,0 +1,64 @@
+---
+# Installs the offsite backup (restic as a container) as a user service and timer. No sudo. Creates NO credentials:
+# the repository password and any target secrets must already exist as Podman secrets (docs/offsite-backup.md).
+# Does not initialise the repository and does not run a backup; that is Phase U4, with the owner at the keyboard.
+- name: Install the offsite backup (restic)
+  hosts: gateway
+  gather_facts: true
+  vars:
+    platform_home: "{{ ansible_facts['user_dir'] }}/cornil-platform"
+    systemd_user_dir: "{{ ansible_facts['user_dir'] }}/.config/systemd/user"
+    needed_secrets: "{{ [restic_password_secret] + (restic_extra_secrets | map(attribute='secret') | list) }}"
+  tasks:
+    - name: Check the repository address was set in local/vars.yml
+      ansible.builtin.assert:
+        that:
+          - restic_repository is defined
+          - "'CHANGE-ME' not in restic_repository"
+        fail_msg: >-
+          Set restic_repository in local/vars.yml (see local/vars.example.yml and docs/offsite-backup.md).
+          It is deliberately not in the repository.
+      delegate_to: localhost
+      run_once: true
+
+    - name: Check that every needed Podman secret exists (by name; values are never read)
+      ansible.builtin.command: podman secret exists {{ item }}
+      loop: "{{ needed_secrets }}"
+      changed_when: false
+      check_mode: false
+      register: secrets
+      failed_when: false
+
+    - name: Stop here if a secret is missing
+      ansible.builtin.assert:
+        that: secrets.results | map(attribute='rc') | select('ne', 0) | list | length == 0
+        fail_msg: >-
+          A Podman secret is missing: {{ secrets.results | selectattr('rc', 'ne', 0) | map(attribute='item') | list }}.
+          Create it on the server with: make restic-secret NAME=<secret name>  (you type the value at a prompt on the server).
+
+    - name: Create the folders
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        mode: "0700"
+      loop: ["{{ platform_home }}", "{{ platform_home }}/restic-cache", "{{ systemd_user_dir }}"]
+
+    - name: Install the restic service and timer
+      ansible.builtin.template:
+        src: "{{ item }}.j2"
+        dest: "{{ systemd_user_dir }}/{{ item }}"
+        mode: "0600"
+      loop: [restic-backup.service, restic-backup.timer]
+      register: units
+
+    - name: Let systemd read the new unit files
+      ansible.builtin.systemd:
+        scope: user
+        daemon_reload: true
+      when: units.changed
+
+    - name: Summary (the timer is NOT enabled yet - initialise the repository and take the first backup in Phase U4)
+      ansible.builtin.debug:
+        msg: >-
+          Installed restic-backup.service and restic-backup.timer. Nothing was sent anywhere. Next (Phase U4):
+          initialise the repository, run the first backup, then enable the timer.

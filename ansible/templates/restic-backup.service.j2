@@ -1,0 +1,45 @@
+# Managed by cornil-gateway (ansible/restic-deploy.yml). Do not edit by hand.
+# A ROOTLESS user unit. Sends the dumps and the app backup archives, encrypted, to the offsite restic repository,
+# then thins out old snapshots. The repository password is the Podman secret {{ restic_password_secret }}
+# (created on the server; never in this repository). See docs/offsite-backup.md.
+[Unit]
+Description=Offsite backup of the database dumps and app backup archives (restic)
+Wants=pg-dump.service
+After=pg-dump.service network-online.target
+
+[Service]
+Type=oneshot
+# The mount guard (ADR 0006).
+ExecStartPre=/usr/bin/mountpoint -q {{ u01_mount }}
+ExecStartPre=/usr/bin/podman secret exists {{ restic_password_secret }}
+ExecStart=/usr/bin/podman run --rm --name restic-backup --read-only --security-opt=no-new-privileges --cap-drop=all \
+  --memory=512m --pids-limit=100 \
+  --secret {{ restic_password_secret }},type=mount \
+  -e RESTIC_REPOSITORY={{ restic_repository }} -e RESTIC_PASSWORD_FILE=/run/secrets/{{ restic_password_secret }} \
+  -e RESTIC_CACHE_DIR=/cache --tmpfs /tmp \
+  -v %h/cornil-platform/restic-cache:/cache \
+{% for s in restic_extra_secrets %}
+  --secret {{ s.secret }},type=env,target={{ s.env }} \
+{% endfor %}
+{% if restic_ssh_dir %}
+  -v {{ restic_ssh_dir }}:/root/.ssh:ro \
+{% endif %}
+{% for path in restic_backup_paths %}
+  -v {{ path }}:/backup{{ path }}:ro \
+{% endfor %}
+  {{ restic_image }} backup --host cornil --tag cornil --exclude '.*.tmp' {% for path in restic_backup_paths %}/backup{{ path }} {% endfor %}
+
+ExecStart=/usr/bin/podman run --rm --name restic-forget --read-only --security-opt=no-new-privileges --cap-drop=all \
+  --memory=512m --pids-limit=100 \
+  --secret {{ restic_password_secret }},type=mount \
+  -e RESTIC_REPOSITORY={{ restic_repository }} -e RESTIC_PASSWORD_FILE=/run/secrets/{{ restic_password_secret }} \
+  -e RESTIC_CACHE_DIR=/cache --tmpfs /tmp \
+  -v %h/cornil-platform/restic-cache:/cache \
+{% for s in restic_extra_secrets %}
+  --secret {{ s.secret }},type=env,target={{ s.env }} \
+{% endfor %}
+{% if restic_ssh_dir %}
+  -v {{ restic_ssh_dir }}:/root/.ssh:ro \
+{% endif %}
+  {{ restic_image }} forget --host cornil --tag cornil --prune --keep-daily {{ restic_keep_daily }} --keep-weekly {{ restic_keep_weekly }} --keep-monthly {{ restic_keep_monthly }}
+TimeoutStartSec=6h

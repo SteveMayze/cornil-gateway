@@ -1,0 +1,41 @@
+---
+# REPLACES a live database with a dump (docs/recovery.md). Takes a safety dump first, restores into a new database,
+# checks row counts, renames the current database ASIDE (never drops it) and renames the new one into its place.
+# Stop the app that uses the database first. Run: make pg-restore DB=partsdb DUMP=partsdb-....dump  (asks for RESTORE)
+- name: Restore a PostgreSQL database from a dump
+  hosts: gateway
+  gather_facts: true
+  vars:
+    platform_home: "{{ ansible_facts['user_dir'] }}/cornil-platform"
+  tasks:
+    - name: Check the owner typed RESTORE and gave a database and a dump
+      ansible.builtin.assert:
+        that:
+          - confirm | default('') == 'RESTORE'
+          - db | default('') != ''
+          - dump | default('') != ''
+        fail_msg: "Use: make pg-restore DB=<database> DUMP=<dump file name>, then type RESTORE when asked."
+      delegate_to: localhost
+      run_once: true
+
+    - name: Restore (safety dump, restore into a new database, check, switch)
+      ansible.builtin.command:
+        argv: ["{{ platform_home }}/bin/pg-restore.sh", "{{ db }}", "{{ dump }}"]
+      environment:
+        BACKUP_ROOT: "{{ postgres_backup_dir }}"
+        CONFIRM: RESTORE
+      register: restore
+      changed_when: true
+      failed_when: false
+      when: not ansible_check_mode
+
+    - name: Result
+      ansible.builtin.debug:
+        msg: "{{ restore.stdout_lines + restore.stderr_lines }}"
+      when: not ansible_check_mode
+
+    - name: Fail unless the restore printed RESTORE_OK
+      ansible.builtin.assert:
+        that: "'RESTORE_OK' in restore.stdout"
+        fail_msg: The restore did not finish. Read the lines above; the previous database was not dropped.
+      when: not ansible_check_mode

@@ -43,5 +43,10 @@ That is all. Nothing in this repo needs editing.
 - **Hardening.** Read-only container filesystem, no extra privileges, no Linux capabilities, memory limit 1 GB, at most 200 processes.
 - **Superuser password.** It is used only when the cluster is first created. The playbooks refuse to generate a new one for an existing cluster, because it would not match.
 
+## Backups (Phase U3, built; deployed in U4)
+- `make pg-backup-deploy` installs the nightly dump; `make pg-backup-now` takes one now. Dumps live in `/u01/data/backups/postgres/<db>/`; the newest, 14 daily and 12 monthly are kept.
+- `make pg-restore-drill` proves the newest dump restores (live data untouched); `make pg-restore DB=… DUMP=…` replaces a database from a dump (asks for `RESTORE`, renames the old one aside, never drops).
+- Offsite copy with restic: `docs/offsite-backup.md`. Disk health: `docs/disk-health.md`. Procedures: `docs/recovery.md` section 7.
+
 ## What was not verified (nothing has been run on the server)
 The unit has been checked as text by the tests and as an Ansible playbook, but not yet translated by the server's Quadlet generator (`make quadlet-dryrun`, which the owner runs) and not started. Things that could still need a small adjustment on first start: the read-only root filesystem with the socket folder in memory, and the `UserNS=keep-id` mapping with the data folder. Phase U2 starts it for the first time, with a rehearsal first.

@@ -1,0 +1,32 @@
+---
+# Runs the dump service once, now, and lists what exists. No sudo. Adds a dump; deletes nothing except what the
+# retention rule (14 daily, 12 monthly, always the newest) allows.
+- name: Take a PostgreSQL dump now
+  hosts: gateway
+  gather_facts: false
+  tasks:
+    - name: Run the dump service and wait for it to finish
+      ansible.builtin.command: systemctl --user start pg-dump.service
+      changed_when: true
+      register: run
+      failed_when: false
+
+    - name: What the dump service printed (last run)
+      ansible.builtin.command: journalctl --user -u pg-dump.service -n 20 --no-pager -o cat
+      register: log
+      changed_when: false
+
+    - name: Dumps on disk (name, size)
+      ansible.builtin.shell: |
+        find {{ postgres_backup_dir }} -type f -name '*.dump' -printf '%P  %s bytes\n' | sort
+      changed_when: false
+      register: listing
+
+    - name: Show
+      ansible.builtin.debug:
+        msg: "{{ ['exit code: ' ~ run.rc] + log.stdout_lines + ['--- dumps ---'] + listing.stdout_lines }}"
+
+    - name: Fail if the dump service failed
+      ansible.builtin.fail:
+        msg: The dump service failed. See the lines above and docs/recovery.md.
+      when: run.rc != 0

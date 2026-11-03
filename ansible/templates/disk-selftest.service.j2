@@ -1,0 +1,8 @@
+# Managed by cornil-gateway (ansible/bootstrap-disk-health.yml). A SYSTEM unit (runs as root). Installed only when
+# disk_smart_long_test is true: starts the disk's own long self-test (it runs inside the disk and takes hours).
+[Unit]
+Description=Start the monthly SMART long self-test on the disk under {{ u01_mount }}
+
+[Service]
+Type=oneshot
+ExecStart=/bin/sh -c 'd=/dev/$(lsblk -no PKNAME "$(findmnt -no SOURCE {{ u01_mount }})" | head -1); exec /usr/sbin/smartctl -t long -d sat "$d"'

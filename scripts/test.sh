@@ -13,7 +13,7 @@ tmp=$(mktemp -d); trap 'kill $(jobs -p) 2>/dev/null; rm -rf "$tmp"' EXIT
 
 echo "1. Playbooks are well-formed"
 export ANSIBLE_CONFIG=ansible/ansible.cfg
-for p in deploy backup-caddy-data restore-caddy-data status root-cert bootstrap-ports cutover rollback-legacy render postgres-deploy postgres-status pg-create-app; do
+for p in deploy backup-caddy-data restore-caddy-data status root-cert bootstrap-ports cutover rollback-legacy render postgres-deploy postgres-status pg-create-app pg-backup-deploy pg-backup-now pg-restore-drill pg-restore restic-deploy bootstrap-disk-health disk-status; do
   check "syntax-check $p.yml" "$VENV/ansible-playbook -i local/inventory.example.ini --syntax-check ansible/$p.yml"
 done
 
@@ -81,6 +81,19 @@ check "pg-create-app makes the role a non-superuser, revokes PUBLIC connect" "gr
 check "pg-create-app also closes the postgres maintenance database to PUBLIC" "grep -q 'REVOKE ALL ON DATABASE postgres FROM PUBLIC' ansible/pg-create-app.yml"
 check "quadlet-dryrun script sends the postgres and db units too" "grep -q 'postgres.container' scripts/quadlet-dryrun.sh && grep -q 'db.network' scripts/quadlet-dryrun.sh"
 
+echo "2b-2. Backup units (rendered), then the backup tools and the disk health job run for real"
+D=$tmp/std
+check "dump service: mount guard, runs the installed script, retention numbers from group_vars" "grep -q '^ExecStartPre=/usr/bin/mountpoint -q /u01\$' $D/pg-dump.service && grep -q '^ExecStart=%h/cornil-platform/bin/pg-dump.sh' $D/pg-dump.service && grep -q '^Environment=KEEP_DAILY=14\$' $D/pg-dump.service && grep -q '^Environment=KEEP_MONTHLY=12\$' $D/pg-dump.service && grep -q '^Environment=BACKUP_ROOT=/u01/data/backups/postgres\$' $D/pg-dump.service"
+check "dump timer: Persistent=true and a random delay" "grep -q '^Persistent=true' $D/pg-dump.timer && grep -q '^RandomizedDelaySec=' $D/pg-dump.timer && grep -q '^OnCalendar=' $D/pg-dump.timer"
+check "restic service: password only by Podman secret name, repository from a variable, no credential text" "grep -q -- '--secret restic-repo-password,type=mount' $D/restic-backup.service && grep -q 'RESTIC_PASSWORD_FILE=/run/secrets/restic-repo-password' $D/restic-backup.service && ! grep -E '^[^#]*(RESTIC_PASSWORD=|--password|AWS_SECRET_ACCESS_KEY=[A-Za-z0-9])' $D/restic-backup.service"
+check "restic service: every backed-up folder is mounted read-only, under /u01/data, nothing from the eMMC" "[ \"\$(grep -c -- '-v /u01/data/.*:ro' $D/restic-backup.service)\" = 3 ] && ! grep -E -- '-v (/home|%h)[^ ]*:/backup' $D/restic-backup.service"
+check "restic service: mount guard, hardening, prune retention from group_vars" "grep -q '^ExecStartPre=/usr/bin/mountpoint -q /u01\$' $D/restic-backup.service && grep -q -- '--cap-drop=all' $D/restic-backup.service && grep -q -- '--security-opt=no-new-privileges' $D/restic-backup.service && grep -q -- 'forget --host cornil --tag cornil --prune --keep-daily 7 --keep-weekly 5 --keep-monthly 12' $D/restic-backup.service"
+check "restic image is pinned to an exact version" "grep -Eq -- 'restic/restic:[0-9]+\\.[0-9]+\\.[0-9]+( |\$)' $D/restic-backup.service && ! grep -q 'latest' $D/restic-backup.service"
+check "restic: no repository address or credential is tracked (placeholder only)" "grep -q '^restic_repository: CHANGE-ME' ansible/group_vars/all.yml && ! git ls-files -z | xargs -0 grep -lE 'sftp:[a-z]+@[0-9]|s3:https://[a-z0-9.-]+/[a-z]' 2>/dev/null | grep -v -e 'local/vars.example.yml' -e 'docs/' -e 'scripts/test' | grep ."
+check "disk health units: timer is daily; long self-test is off by default" "grep -q '^OnCalendar=' $D/disk-health.timer && grep -q '^disk_smart_long_test: false' ansible/group_vars/all.yml"
+check "disk health bootstrap says it needs sudo and adds no group to the service user" "head -3 ansible/bootstrap-disk-health.yml | grep -qi sudo && ! grep -vE '^[[:space:]]*#' ansible/bootstrap-disk-health.yml | grep -qiE 'ansible.builtin.user|usermod|sudoers|append: *true|groups:'"
+bash scripts/test-pgtools.sh "$D" || fail=1
+
 echo "3. Caddy runs the rendered Caddyfile (real Caddy, stand-in apps)"
 if ! command -v caddy >/dev/null; then
   echo "  SKIP  caddy not installed locally (brew install caddy). Behaviour tests NOT run."; fail=1
@@ -113,15 +126,15 @@ else
 fi
 
 echo "4. No sudo outside the labelled one-time steps"
-routine="deploy status backup-caddy-data restore-drill root-cert smoke check test render pg-deploy pg-deploy-check pg-status pg-create-app"
+routine="deploy status backup-caddy-data restore-drill root-cert smoke check test render pg-deploy pg-deploy-check pg-status pg-create-app pg-backup-deploy pg-backup-now pg-restore-drill pg-restore restic-deploy restic-secret disk-status"
 for t in $routine; do
   out=$(make -n "$t" 2>&1)
   if echo "$out" | grep -qE '(^|[[:space:]])(sudo|-K|--ask-become-pass|-b)([[:space:]]|$)|become'; then bad "make $t must not use sudo"; else ok "make $t uses no sudo"; fi
 done
-for p in deploy backup-caddy-data restore-caddy-data status root-cert render postgres-deploy postgres-status pg-create-app; do
+for p in deploy backup-caddy-data restore-caddy-data status root-cert render postgres-deploy postgres-status pg-create-app pg-backup-deploy pg-backup-now pg-restore-drill pg-restore restic-deploy disk-status; do
   check "$p.yml has no become/sudo" "! grep -vE '^[[:space:]]*#' ansible/$p.yml | grep -qE 'become|sudo'"
 done
-for p in bootstrap-ports cutover rollback-legacy; do
+for p in bootstrap-ports cutover rollback-legacy bootstrap-disk-health; do
   check "$p.yml says it needs sudo in its header" "head -4 ansible/$p.yml | grep -qi 'sudo'"
 done
 

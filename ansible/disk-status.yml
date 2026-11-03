@@ -1,0 +1,15 @@
+---
+# Read-only. Shows the disk health status file written by the root job (see docs/disk-health.md). Needs no extra rights.
+- name: Disk health status
+  hosts: gateway
+  gather_facts: false
+  tasks:
+    - name: Read the status file
+      ansible.builtin.command: cat {{ disk_health_status_dir }}/status
+      register: status
+      changed_when: false
+      failed_when: false
+
+    - name: Show
+      ansible.builtin.debug:
+        msg: "{{ status.stdout_lines if status.rc == 0 else ['No status file yet. Install the job once with: make bootstrap-disk-health (one-time, asks for the administrator password).'] }}"

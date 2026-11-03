@@ -51,7 +51,39 @@ Then install the new file on every device ([`trust-root-cert.md`](trust-root-cer
 ## 6. Backups: what and where
 `make backup-caddy-data` writes a dated archive into `~/cornil-gateway/backups/` on the server (mode 600; the newest 7 are kept). It contains the CA's **private key**: copy it only to your own encrypted storage, never into this repo. Nothing runs it automatically yet; run it after any CA change and whenever you like (monthly is sensible). If the server's disk dies, the only copy of the CA is the one you saved elsewhere.
 
-## 7. PostgreSQL (outline; filled in during phases U3 and U4)
-- **`/u01` is not mounted** (USB disk unplugged or failed): `postgres` and the app units refuse to start and keep retrying every 10 seconds; Caddy and the portal stay up. Plug the disk in, wait a minute, then `make pg-status`. Never create files in `/u01` while it is unmounted. *(Details: U3.)*
-- **Restoring a database from a nightly dump, the restore drill, and rebuilding onto a new disk from the offsite copy:** *(U3 and U4.)*
-- **The superuser secret is missing but the data exists:** `make pg-deploy` refuses and changes nothing. Do not delete anything. *(Details: U3.)*
+## 7. PostgreSQL
+
+What exists: the database `postgres` container (data in `/u01/data/postgres`), nightly dumps in `/u01/data/backups/postgres/<db>/` (kept: newest, 14 days, 12 months), an offsite restic copy (from Phase U4), and a disk health status. Commands: `make pg-status`, `make pg-backup-now`, `make pg-restore-drill`, `make pg-restore`, `make disk-status`. Background: `docs/postgres.md`, `docs/offsite-backup.md`, `docs/disk-health.md`.
+
+### 7.1 `/u01` is not mounted (USB disk unplugged, loose or dead)
+Symptoms: `make pg-status` says "u01 mounted: NO"; the apps are down (they refuse to start without the disk); the portal page and Caddy still answer. This is the guard from ADR 0006 working: nothing is written into the empty mount-point folder.
+1. Check the cable and that the disk spins up. Do **not** create files in `/u01` while it is empty.
+2. The units retry every 10 seconds, so once the disk is back everything starts by itself. If not: as the administrator, `sudo mount /u01` (it reads `/etc/fstab`), then `make pg-status`.
+3. If the disk does not appear at all (`lsblk` shows no `sda`), see 7.5.
+
+### 7.2 A nightly dump did not run or failed
+`make pg-status` shows the newest dump per database and its age in hours; anything over about 30 hours is late. Run `make pg-backup-now`: it prints `DUMP_OK` lines or the error. The usual causes are `/u01` not mounted (7.1) and PostgreSQL not healthy. The timer catches up by itself after downtime (`Persistent=true`).
+
+### 7.3 Proving a backup works: the restore drill (quarterly rehearsal)
+Run `make pg-restore-drill` (all app databases) or `make pg-restore-drill DB=partsdb`. It restores the newest dump into a throw-away database, compares row counts with the dump, drops only that database and prints `DRILL_OK partsdb <dump name>`. Success looks like "row counts match for N tables with data" and `DRILL_OK`. If it prints `DRILL_FAILED`, the live database is untouched; keep the line that says which table differs and tell me. The full quarterly checklist (including an offsite restore) is written in Phase U4.
+
+### 7.4 Putting an older state back: restoring a database from a dump
+Use this when data was damaged or deleted. **Stop the app that uses the database first** (for example `systemctl --user stop parts-db-web.service` as the service user).
+1. Choose the dump: `make pg-status` shows the newest; the list is in `/u01/data/backups/postgres/<db>/`.
+2. `make pg-restore DB=partsdb DUMP=partsdb-20261103T021500Z.dump`, then type `RESTORE` when asked. It takes a safety dump of the current state, restores into a new database, checks the row counts, then renames: the current database becomes `partsdb_old_<time>` and the restored one becomes `partsdb`. Nothing is dropped.
+3. Start the app and check it. Keep `partsdb_old_<time>` until you are sure; deleting it is a manual administrator decision (`DROP DATABASE`, with a backup first); these tools never do it.
+Normal output ends with `RESTORE_OK`. If it stops earlier, the live database was not replaced; the message says what is left over.
+
+### 7.5 The disk is dead: restoring onto a new disk from the offsite copy
+(Rehearsed in Phase U4; outline here.)
+1. Fit a new disk, format it ext4 with the label `u01` and mount it at `/u01` (same `fstab` line as before; administrator steps from the earlier setup).
+2. Recreate the folders: `make pg-deploy` (creates `/u01/data/postgres` and the dump folder, and starts an empty PostgreSQL; the superuser secret still exists on the eMMC).
+3. Fetch the newest dump of each database from the offsite repository into `/u01/data/backups/postgres/<db>/` (commands written in U4; you need the **restic password from your safe place**).
+4. `make pg-create-app APP=partsdb` and `APP=taxtool` only if the roles do not exist (they do not on an empty server); then `make pg-restore DB=… DUMP=…`.
+5. Restore each app's own archive into its folder as that app's repo describes, then start the apps.
+
+### 7.6 The superuser secret is missing but the data exists
+`make pg-deploy` refuses and changes nothing. Do not delete anything. The data is intact; the password only matters at first creation. Tell me; the fix is a documented, owner-approved step.
+
+### 7.7 Disk health warnings
+See `docs/disk-health.md` (what each line of `make disk-status` means and what to do).

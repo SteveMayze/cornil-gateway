@@ -1,0 +1,10 @@
+# Managed by cornil-gateway (ansible/bootstrap-disk-health.yml). Installed only when disk_smart_long_test is true.
+[Unit]
+Description=Monthly SMART long self-test
+
+[Timer]
+OnCalendar={{ disk_smart_long_test_calendar }}
+Persistent=true
+
+[Install]
+WantedBy=timers.target
