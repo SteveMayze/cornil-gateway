@@ -3,7 +3,7 @@
 Save as `CLAUDE.md` in the root of the `cornil-gateway` repository. Put `GATEWAY.md` at `docs/prompts/GATEWAY.md`.
 
 ## What this repository is
-The single owner of the reverse proxy (Caddy) on the home server `cornil` (`cornil.fritz.box`). It serves two Django apps over HTTPS: `/parts-db` and `/tax-healthcare`. No other repository may contain Caddy configuration or write to the proxy's files.
+The single owner of the reverse proxy (Caddy) and, since ADR 0005, of the shared platform on the home server `cornil` (`cornil.fritz.box`): the `db` network, the one `postgres` container, creating databases and roles, nightly dumps, offsite backup (`restic`) and disk health for `/u01`. It serves two Django apps over HTTPS: `/parts-db` and `/tax-healthcare`. No other repository may contain Caddy configuration or write to the proxy's files. No app code and no app data ever enter this repository; database passwords exist only as Podman secrets generated on the server. The plan for the platform is `docs/prompts/U01-POSTGRES-PLATFORM.md` (one phase per session).
 
 The owner has little Podman and Linux administration experience. Explain every concept in plain language the first time it appears, give each command with a one-line "what this does", and say what normal output looks like and what to do if it fails.
 
@@ -39,7 +39,7 @@ Rules:
 `Makefile`, `ansible/`, `Caddyfile` template, `docs/` (`design.md`, `trust-root-cert.md`, `podman-explained.md` link, `decisions/`, `prompts/GATEWAY.md`), `local/` (ignored, placeholders only tracked), `scripts/`.
 
 ## Not in scope
-App code, app databases, tax or health calculations, anything inside parts-db or the Tax and Healthcare Tool repositories (separate sessions; this repo only documents what each app must provide: a URL prefix, its own cookie names, proxy-aware settings).
+App code, the content of app databases (this repo creates empty databases and roles and backs them up, it never reads or migrates app data), tax or health calculations, anything inside parts-db or the Tax and Healthcare Tool repositories (separate sessions; this repo only documents what each app must provide: a URL prefix, its own cookie names, proxy-aware settings).
 
 ## Decisions log (details in `docs/decisions/`)
 - 2026-10-19 (ADR 0001): Caddy is a rootless container of `homeapps`; one repo owns the proxy; HSTS off; ESP32 route dropped; parts-db goes rootless later. Root certificate for MacBook Pro, iMac, iPhone, iPad, Windows. **Pending owner approval:** sysctl for ports 80/443, parts-db connection test.
@@ -49,3 +49,5 @@ App code, app databases, tax or health calculations, anything inside parts-db or
 - 2026-11-01 (ADR 0003): parts-db now runs rootless on `gateway`; `partsdb_upstream: parts-db-web:8000` (old value kept as rollback comment). The owner stopped the rootful `parts-db.service` the same day (8888 refuses connections; unit not removed). Open: rootless parts-db publishes plain port 8891, to be closed in the parts-db repo.
 - 2026-10-19 (ADR 0002, proposed): gateway is live on 80/443 with the tax app reached by container name; plain ports 8888/8889/8890 to be closed per `docs/closing-plain-ports.md` (parts-db cannot be narrowed to localhost until rootless; optional nftables table `cornil_lan`, never enable the stock `nftables.service`). Restore tooling and `docs/recovery.md` added.
 - 2026-11-01 (ADR 0004, proposed): `/` serves a self-contained HTML portal page, rendered from `ansible/templates/portal/index.html.j2` using the `portal_apps` list in `group_vars/all.yml`; unknown paths now return 404 instead of the old plain text. Built on branch `feat/portal-landing-page`; not deployed.
+- 2026-11-03 (ADR 0005 and 0006, proposed; Phase U0 done): scope extended to the shared platform; PostgreSQL 17; cluster locale `en_US.utf8` (pin the image tag, `REINDEX` after an OS change, apps set explicit ordering); Podman image storage and Podman secrets stay on the eMMC, builds use `/u01` for temporary files. Mount guard proven on the server: `RequiresMountsFor=/u01` only orders in a user unit, so units that use `/u01` (postgres, app units, not Caddy) use `ExecStartPre=/usr/bin/mountpoint -q /u01` with `Restart=on-failure`, `RestartSec=10`, `StartLimitIntervalSec=0`.
+- 2026-11-03 (Phase U0 finding): a stale **rootful** `tax-healthcare-tool-web` still runs (system service `tax-healthcare-tool.service`, plain port 8889, its own data under `/var/lib/tax-healthcare-tool`, database unchanged since 2026-10-19). It owns the `2601c` healthcheck unit name. The live Tax tool is the rootless one; its data is the migration source. Closing 8889 stays an owner step per `docs/closing-plain-ports.md`.
