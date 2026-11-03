@@ -4,7 +4,7 @@
 VENV      := .venv-infra
 ANSIBLE   := ANSIBLE_CONFIG=ansible/ansible.cfg $(VENV)/bin/ansible-playbook -i local/inventory.ini $(if $(wildcard local/vars.yml),-e @local/vars.yml) $(if $(HTTP_PORT),-e gateway_http_port=$(HTTP_PORT)) $(if $(HTTPS_PORT),-e gateway_https_port=$(HTTPS_PORT))
 
-.PHONY: pg-deploy pg-deploy-check pg-status pg-create-app restore-drill restore-caddy-data quadlet-dryrun deploy-check help hooks ansible-setup syntax check test secrets-scan render deploy status backup-caddy-data root-cert smoke bootstrap-ports cutover rollback-legacy
+.PHONY: pg-backup-deploy pg-backup-now pg-restore-drill pg-restore restic-deploy restic-secret disk-status bootstrap-disk-health pg-deploy pg-deploy-check pg-status pg-create-app restore-drill restore-caddy-data quadlet-dryrun deploy-check help hooks ansible-setup syntax check test secrets-scan render deploy status backup-caddy-data root-cert smoke bootstrap-ports cutover rollback-legacy
 
 help:  ## Show this list
 	@grep -E '^[a-z-]+:.*##' $(MAKEFILE_LIST) | sed 's/:.*## /\t/'
@@ -20,7 +20,7 @@ secrets-scan:  ## Scan the whole git history and working tree for secrets
 	gitleaks dir --redact --verbose .
 
 syntax:  ## Check that every playbook is well-formed; changes nothing
-	for p in deploy backup-caddy-data status root-cert restore-caddy-data bootstrap-ports cutover rollback-legacy render postgres-deploy postgres-status pg-create-app; do \
+	for p in deploy backup-caddy-data status root-cert restore-caddy-data bootstrap-ports cutover rollback-legacy render postgres-deploy postgres-status pg-create-app pg-backup-deploy pg-backup-now pg-restore-drill pg-restore restic-deploy bootstrap-disk-health disk-status; do \
 	  ANSIBLE_CONFIG=ansible/ansible.cfg $(VENV)/bin/ansible-playbook -i local/inventory.example.ini --syntax-check ansible/$$p.yml || exit 1; done
 
 test:  ## Run the tests on the real rendered files (needs a local caddy: brew install caddy)
@@ -58,6 +58,33 @@ cutover:  ## [SUDO] Back up and stop the legacy Caddy so the new one can take po
 
 rollback-legacy:  ## [SUDO] Put the legacy Caddy back and stop the new one
 	$(ANSIBLE) -K ansible/rollback-legacy.yml
+
+pg-backup-deploy:  ## Install the nightly PostgreSQL dump (scripts, service, timer; no sudo)
+	$(ANSIBLE) ansible/pg-backup-deploy.yml
+
+pg-backup-now:  ## Take a PostgreSQL dump right now and list the dumps
+	$(ANSIBLE) ansible/pg-backup-now.yml
+
+pg-restore-drill:  ## Prove the newest dump restores (into a throw-away database; live data untouched). Optional: DB=partsdb DUMP=...
+	$(ANSIBLE) ansible/pg-restore-drill.yml $(if $(DB),-e db=$(DB)) $(if $(DUMP),-e dump=$(DUMP))
+
+pg-restore:  ## Replace a live database from a dump (asks you to type RESTORE; the old one is kept aside). make pg-restore DB=... DUMP=...
+	@test -n "$(DB)" -a -n "$(DUMP)" || { echo "Give DB=<database> DUMP=<dump file name>; list them with: make pg-status"; exit 1; }
+	@printf 'This replaces the live database %s with %s (the old one is kept aside). Is the app using it stopped? Type RESTORE to continue: ' "$(DB)" "$(DUMP)"; read a; test "$$a" = RESTORE
+	$(ANSIBLE) ansible/pg-restore.yml -e db=$(DB) -e dump=$(DUMP) -e confirm=RESTORE
+
+restic-secret:  ## Create one Podman secret on the server from a hidden prompt there. make restic-secret NAME=restic-repo-password
+	@test -n "$(NAME)" || { echo "Give NAME=<secret name>, for example NAME=restic-repo-password"; exit 1; }
+	scripts/restic-secret.sh $(NAME)
+
+restic-deploy:  ## Install the offsite backup service and timer (restic as a container; no credentials; not enabled until U4)
+	$(ANSIBLE) ansible/restic-deploy.yml
+
+disk-status:  ## Show the disk health status file (SMART summary, USB resets, I/O errors; no sudo)
+	$(ANSIBLE) ansible/disk-status.yml
+
+bootstrap-disk-health:  ## [SUDO, once] Install smartmontools and the root job that writes the disk health status file
+	$(ANSIBLE) -K -l admin ansible/bootstrap-disk-health.yml
 
 pg-deploy:  ## Install or update the shared PostgreSQL on the server (no sudo; creates an empty server)
 	$(ANSIBLE) ansible/postgres-deploy.yml

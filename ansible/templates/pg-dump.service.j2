@@ -1,0 +1,16 @@
+# Managed by cornil-gateway (ansible/pg-backup-deploy.yml). Do not edit by hand.
+# A ROOTLESS user unit. Nightly dump of every app database, see docs/postgres.md and docs/recovery.md.
+[Unit]
+Description=Nightly PostgreSQL dumps of every app database
+Wants=postgres.service
+After=postgres.service
+
+[Service]
+Type=oneshot
+Environment=BACKUP_ROOT={{ postgres_backup_dir }}
+Environment=KEEP_DAILY={{ pg_backup_keep_daily }}
+Environment=KEEP_MONTHLY={{ pg_backup_keep_monthly }}
+# The mount guard (ADR 0006): never write backups into the empty mount-point folder.
+ExecStartPre=/usr/bin/mountpoint -q {{ u01_mount }}
+ExecStart=%h/cornil-platform/bin/pg-dump.sh
+TimeoutStartSec=3600

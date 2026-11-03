@@ -17,6 +17,8 @@
         echo "server: $(podman exec postgres psql -U postgres -d postgres -X -tA -c 'show server_version' 2>&1)"
         echo "locale (template1 collation): $(podman exec postgres psql -U postgres -d postgres -X -tA -c "select datcollate from pg_database where datname = 'template1'" 2>&1)"
         echo "durability: $(podman exec postgres psql -U postgres -d postgres -X -tA -c "select current_setting('fsync')||' fsync, '||current_setting('synchronous_commit')||' synchronous_commit, '||current_setting('full_page_writes')||' full_page_writes'" 2>&1)"
+        echo "newest dump per database (name / age in hours):"
+        for d in {{ postgres_backup_dir }}/*/; do [ -d "$d" ] || continue; n=$(ls -1t "$d" 2>/dev/null | grep -E '\.dump$' | head -1); [ -n "$n" ] && echo "$n / $(( ($(date +%s) - $(stat -c %Y "$d$n")) / 3600 ))h" || echo "$(basename "$d") / no dump yet"; done
         echo "databases (name / owner):"
         podman exec postgres psql -U postgres -d postgres -X -tA -F ' / ' -c "select datname, pg_get_userbyid(datdba) from pg_database where not datistemplate order by 1" 2>&1
         echo "roles (name / superuser / can log in):"

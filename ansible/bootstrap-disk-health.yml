@@ -1,0 +1,64 @@
+---
+# [SUDO, once] Installs the disk health job. Needs the administrator's password (make bootstrap-disk-health asks).
+# What it changes on the server, and nothing else:
+#   - installs the package smartmontools (apt);
+#   - creates /var/lib/cornil-disk-health (root-owned, world-readable status file only);
+#   - installs /usr/local/sbin/cornil-disk-health and a systemd timer that runs it daily as root;
+#   - if disk_smart_long_test is true: a monthly SMART long self-test timer (off by default; the owner decides).
+# The service user gets NO extra group or privilege; it reads the status file with `make disk-status`.
+- name: Install the disk health job (one-time, needs sudo)
+  hosts: admin
+  gather_facts: false
+  become: true
+  tasks:
+    - name: Install smartmontools
+      ansible.builtin.apt:
+        name: smartmontools
+        state: present
+
+    - name: Create the status folder
+      ansible.builtin.file:
+        path: "{{ disk_health_status_dir }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Install the status script
+      ansible.builtin.template:
+        src: disk-health.sh.j2
+        dest: /usr/local/sbin/cornil-disk-health
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Install the status service and timer
+      ansible.builtin.template:
+        src: "{{ item }}.j2"
+        dest: "/etc/systemd/system/{{ item }}"
+        owner: root
+        group: root
+        mode: "0644"
+      loop: [disk-health.service, disk-health.timer]
+
+    - name: Install the monthly long self-test (only when approved)
+      ansible.builtin.template:
+        src: "{{ item }}.j2"
+        dest: "/etc/systemd/system/{{ item }}"
+        owner: root
+        group: root
+        mode: "0644"
+      loop: [disk-selftest.service, disk-selftest.timer]
+      when: disk_smart_long_test | bool
+
+    - name: Reload systemd and enable the timers
+      ansible.builtin.systemd:
+        daemon_reload: true
+        name: "{{ item }}"
+        enabled: true
+        state: started
+      loop: "{{ ['disk-health.timer'] + (['disk-selftest.timer'] if (disk_smart_long_test | bool) else []) }}"
+
+    - name: Write the first status file now
+      ansible.builtin.command: /usr/local/sbin/cornil-disk-health
+      changed_when: true

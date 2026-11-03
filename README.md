@@ -55,4 +55,14 @@ PostgreSQL (no sudo; see `docs/postgres.md`):
     make pg-status                   # read-only overview
     make pg-create-app APP=<name>    # add an app's database, login and password secret
 
-Three targets marked `[SUDO]` (`bootstrap-ports`, `cutover`, `rollback-legacy`) ask for the sudo password; each playbook's first lines say exactly what it changes.
+Backups and disk health (see `docs/recovery.md` section 7; built in Phase U3, deployed in U4):
+
+    make pg-backup-deploy            # install the nightly PostgreSQL dump
+    make pg-backup-now               # take a dump now
+    make pg-restore-drill            # prove the newest dump restores (live data untouched)
+    make pg-restore DB=<db> DUMP=<file>   # replace a database from a dump (asks for RESTORE)
+    make restic-secret NAME=<name>   # create a Podman secret on the server from a hidden prompt there
+    make restic-deploy               # install the offsite backup service and timer (not enabled until U4)
+    make disk-status                 # disk health summary
+
+Four targets marked `[SUDO]` (`bootstrap-ports`, `cutover`, `rollback-legacy`, `bootstrap-disk-health`) ask for the sudo password; each playbook's first lines say exactly what it changes.

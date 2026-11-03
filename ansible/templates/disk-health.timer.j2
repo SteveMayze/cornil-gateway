@@ -1,0 +1,10 @@
+# Managed by cornil-gateway (ansible/bootstrap-disk-health.yml).
+[Unit]
+Description=Daily disk health status
+
+[Timer]
+OnCalendar={{ disk_health_calendar }}
+Persistent=true
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,11 @@
+# Managed by cornil-gateway (ansible/restic-deploy.yml). Do not edit by hand.
+[Unit]
+Description=Offsite backup (restic)
+
+[Timer]
+OnCalendar={{ restic_calendar }}
+RandomizedDelaySec={{ restic_random_delay }}
+Persistent=true
+
+[Install]
+WantedBy=timers.target

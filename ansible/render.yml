@@ -24,6 +24,15 @@
         - {src: db.network.j2, dest: db.network}
         - {src: postgres.container.j2, dest: postgres.container}
         - {src: pg_hba.conf.j2, dest: pg_hba.conf}
+        - {src: pg-dump.service.j2, dest: pg-dump.service}
+        - {src: pg-dump.timer.j2, dest: pg-dump.timer}
+        - {src: restic-backup.service.j2, dest: restic-backup.service}
+        - {src: restic-backup.timer.j2, dest: restic-backup.timer}
+        - {src: disk-health.sh.j2, dest: disk-health.sh}
+        - {src: disk-health.service.j2, dest: disk-health.service}
+        - {src: disk-health.timer.j2, dest: disk-health.timer}
+        - {src: disk-selftest.service.j2, dest: disk-selftest.service}
+        - {src: disk-selftest.timer.j2, dest: disk-selftest.timer}
     - name: Make the portal output directory
       ansible.builtin.file: {path: "{{ render_dir }}/portal", state: directory, mode: "0755"}
     - name: Render the portal page

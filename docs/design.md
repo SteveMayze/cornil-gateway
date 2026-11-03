@@ -173,3 +173,7 @@ Internet-facing: nothing. Home network (LAN) sees only:  22 (SSH)   80, 443 (Cad
 - Network `db` (`db.network`, fixed subnet in `group_vars/all.yml`), container `postgres` (rootless, no published port), data in `/u01/data/postgres`, settings file in `~/cornil-platform/postgres/` on the eMMC. Units: `~/.config/containers/systemd/{db.network,postgres.container}`.
 - Podman image storage and Podman secrets stay on the eMMC (ADR 0006). Caddy does not carry the `/u01` guard; PostgreSQL and the app units do.
 - Playbooks: `postgres-deploy.yml`, `postgres-status.yml`, `pg-create-app.yml`. Nothing is deployed until Phase U2.
+
+## 13. Backups and disk health (U3, not deployed)
+- ADR 0007. Tools: `ansible/files/pgtools/*.sh` (installed to `~/cornil-platform/bin/`), units `pg-dump.service/.timer` and `restic-backup.service/.timer` in `~/.config/systemd/user/`, plus a root-owned disk health job (one-time sudo bootstrap) writing `/var/lib/cornil-disk-health/status`.
+- Dumps: `/u01/data/backups/postgres/<db>/`. Offsite: restic container, password only as a Podman secret. Docs: `docs/offsite-backup.md`, `docs/disk-health.md`, `docs/recovery.md` section 7.

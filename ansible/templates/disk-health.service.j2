@@ -1,0 +1,7 @@
+# Managed by cornil-gateway (ansible/bootstrap-disk-health.yml). A SYSTEM unit (runs as root).
+[Unit]
+Description=Write the disk health status file for the service user
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/cornil-disk-health

@@ -1,0 +1,36 @@
+#!/bin/bash
+# Managed by cornil-gateway (ansible/bootstrap-disk-health.yml). Runs as root from a systemd timer.
+# Writes a SMALL status file that the service user can read, so no sudo is needed for `make disk-status`.
+# The file holds no serial number, no address and no file name: only health words and counters.
+set -u
+mount_point={{ u01_mount }}
+out_dir={{ disk_health_status_dir }}
+# CORNIL_PATH exists only so tests can supply stand-in tools; the systemd unit never sets it.
+export PATH=${CORNIL_PATH:-/usr/sbin:/usr/bin:/sbin:/bin}
+src=$(findmnt -no SOURCE "$mount_point" 2>/dev/null || true)
+disk=""
+[ -n "$src" ] && disk=/dev/$(lsblk -no PKNAME "$src" 2>/dev/null | head -1)
+tmp=$(mktemp "$out_dir/.status.XXXXXX")
+{
+  echo "checked_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  echo "mounted=$([ -n "$src" ] && echo yes || echo NO)"
+  if [ -n "$disk" ] && [ "$disk" != "/dev/" ] && command -v smartctl >/dev/null 2>&1; then
+    echo "smart_overall=$(smartctl -H -d sat "$disk" 2>/dev/null | sed -n 's/^SMART overall-health self-assessment test result: //p;s/^SMART Health Status: //p' | head -1)"
+    smartctl -A -d sat "$disk" 2>/dev/null | awk '
+      $1 == 5   { print "reallocated_sectors=" $10 }
+      $1 == 9   { print "power_on_hours=" $10 }
+      $1 == 12  { print "power_cycles=" $10 }
+      $1 == 194 { print "temperature_c=" $10 }
+      $1 == 197 { print "pending_sectors=" $10 }
+      $1 == 198 { print "offline_uncorrectable=" $10 }
+      $1 == 199 { print "udma_crc_errors=" $10 }'
+    echo "last_self_test=$(smartctl -l selftest -d sat "$disk" 2>/dev/null | sed -n '/^# 1 /s/^# 1 *//p' | cut -c1-40 | head -1)"
+  else
+    echo "smart_overall=not-available (smartmontools missing or disk not found)"
+  fi
+  echo "usb_resets_since_boot=$(dmesg 2>/dev/null | grep -ci 'usb.*reset')"
+  echo "io_errors_since_boot=$(dmesg 2>/dev/null | grep -ciE 'I/O error|blk_update_request')"
+  echo "ext4_errors_since_boot=$(dmesg 2>/dev/null | grep -ci 'EXT4-fs error')"
+} > "$tmp"
+chmod 0644 "$tmp"
+mv -f "$tmp" "$out_dir/status"

@@ -1,0 +1,34 @@
+---
+# Proves that a dump can be restored, without touching the live database: restores it into a throw-away database
+# (named drill_<db>_<time>), compares the row count of every table with the dump's own contents, drops only that
+# throw-away database and prints DRILL_OK.   Run: make pg-restore-drill [DB=partsdb] [DUMP=partsdb-....dump]
+- name: PostgreSQL restore drill
+  hosts: gateway
+  gather_facts: true
+  vars:
+    platform_home: "{{ ansible_facts['user_dir'] }}/cornil-platform"
+    drill_dbs: "{{ [db] if (db | default('')) != '' else ['partsdb', 'taxtool'] }}"
+  tasks:
+    - name: Run the drill for each database
+      ansible.builtin.command:
+        argv: "{{ [platform_home ~ '/bin/pg-restore-drill.sh', item] + ([dump] if (dump | default('')) != '' else []) }}"
+      environment:
+        BACKUP_ROOT: "{{ postgres_backup_dir }}"
+      loop: "{{ drill_dbs }}"
+      register: drill
+      changed_when: false
+      failed_when: false
+      when: not ansible_check_mode
+
+    - name: Result
+      ansible.builtin.debug:
+        msg: "{{ item.stdout_lines + item.stderr_lines }}"
+      loop: "{{ drill.results | default([]) }}"
+      loop_control: {label: "{{ item.item }}"}
+      when: not ansible_check_mode
+
+    - name: Fail unless every drill printed DRILL_OK
+      ansible.builtin.assert:
+        that: drill.results | map(attribute='stdout') | select('search', 'DRILL_OK') | list | length == drill_dbs | length
+        fail_msg: A drill did not print DRILL_OK. The live databases were not touched. See the lines above.
+      when: not ansible_check_mode

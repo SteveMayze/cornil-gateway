@@ -78,3 +78,39 @@ postgres_effective_cache_size: 768MB
 postgres_work_mem: 8MB
 postgres_maintenance_work_mem: 64MB
 postgres_stop_timeout: 110
+
+# ---- Backups and disk health (Phase U3, ADR 0007) -----------------------------------------------------------
+# Nightly dump of every app database (inside the postgres container), kept on /u01.
+pg_backup_calendar: "*-*-* 02:15:00"
+pg_backup_random_delay: 15min
+pg_backup_keep_daily: 14     # the newest dump of each of the last 14 days that have one
+pg_backup_keep_monthly: 12   # plus the newest dump of each of the last 12 months that have one; the newest dump is always kept
+
+# Offsite copy with restic, run as a container (no root, nothing to install). The repository address and any
+# target credentials are NOT here: put `restic_repository` (and optional values) in local/vars.yml (git-ignored)
+# and create the passwords as Podman secrets on the server (docs/offsite-backup.md).
+restic_image: docker.io/restic/restic:0.19.1
+restic_repository: CHANGE-ME-IN-LOCAL-VARS
+restic_password_secret: restic-repo-password
+restic_calendar: "*-*-* 04:30:00"
+restic_random_delay: 30min
+restic_keep_daily: 7
+restic_keep_weekly: 5
+restic_keep_monthly: 12
+# What is sent offsite: the database dumps and every app's own backup archive. Read-only inside the container.
+restic_backup_paths:
+  - /u01/data/backups
+  - /u01/data/parts-db/backups
+  - /u01/data/tax-healthcare-tool/backups
+# Extra Podman secrets the chosen target needs, as {secret: <podman secret name>, env: <variable name>} pairs
+# (for example an S3 bucket's access key). Empty for an SFTP target that uses a key file.
+restic_extra_secrets: []
+# Folder on the server (eMMC) holding the SSH key and known_hosts for an SFTP target; leave empty if unused.
+restic_ssh_dir: ""
+
+# Disk health (docs/disk-health.md). The one-time sudo bootstrap installs a small root-owned job that writes a
+# status file the service user can read. The monthly long self-test is a proposal: off until the owner approves.
+disk_health_status_dir: /var/lib/cornil-disk-health
+disk_health_calendar: "*-*-* 06:00:00"
+disk_smart_long_test: false
+disk_smart_long_test_calendar: "*-*-01 03:00:00"
