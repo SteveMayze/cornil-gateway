@@ -57,7 +57,7 @@ No repo writes into another repo's files, units, folders or secrets on the serve
 /u01/apps/<app>/build/                    image build contexts (were ~/<app>/build)
 ```
 
-Stays on the eMMC, never on the removable disk: each app's `config/env` (Django secret key), the Podman image storage, and the Podman secrets.
+Stays on the eMMC, never on the removable disk: each app's `config/env` (Django secret key), the Podman image storage, and the Podman secrets. Image builds use `/u01` for temporary files.
 
 **Database.** Container `postgres` on the Podman network `db` (Quadlet file `db.network`, `NetworkName=db`). **Not published on the host**: reachable only from containers that join `db`, as host `postgres`, port 5432. Official `postgres` image pinned to an exact tag (major version decided in U0, default 17, which matches Debian 13's client tools). `scram-sha-256` only. One database and one login role per app: `partsdb` / `partsdb`, `taxtool` / `taxtool` (later `humbser`). A role is not a superuser, owns only its database, and `CONNECT` is revoked from `PUBLIC`.
 
