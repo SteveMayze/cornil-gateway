@@ -1,0 +1,161 @@
+---
+# Deploys the shared PostgreSQL (ADR 0005). Runs as the service user: no sudo, no become. Safe to repeat.
+# Creates an EMPTY server; databases and roles come from `make pg-create-app`. Touches nothing of Caddy or the apps.
+- name: Deploy PostgreSQL (rootless container on the db network)
+  hosts: gateway
+  gather_facts: true
+  vars:
+    platform_home: "{{ ansible_facts['user_dir'] }}/cornil-platform"
+    quadlet_dir: "{{ ansible_facts['user_dir'] }}/.config/containers/systemd"
+    superuser_secret: postgres-superuser-password
+  tasks:
+    # ---- checks that explain themselves ------------------------------------------------------------
+    - name: Check linger is on (the user's services must run with nobody logged in)
+      ansible.builtin.command: loginctl show-user {{ ansible_facts['user_id'] }} --property=Linger --value
+      register: linger
+      changed_when: false
+      failed_when: linger.stdout != 'yes'
+
+    - name: Check that /u01 is a real mounted disk, not the empty folder
+      ansible.builtin.command: mountpoint -q {{ u01_mount }}
+      changed_when: false
+      register: u01
+      failed_when: false
+
+    - name: Stop here if /u01 is not mounted
+      ansible.builtin.assert:
+        that: u01.rc == 0
+        fail_msg: >-
+          {{ u01_mount }} is not a mounted disk. Nothing was written. Check that the USB disk is plugged in
+          (see docs/recovery.md), then run this again.
+
+    - name: Remember whether PostgreSQL is already running
+      ansible.builtin.command: systemctl --user is-active postgres.service
+      register: was_active
+      changed_when: false
+      failed_when: false
+
+    - name: Is the superuser secret already stored?
+      ansible.builtin.command: podman secret exists {{ superuser_secret }}
+      register: secret_present
+      changed_when: false
+      failed_when: false
+
+    - name: Does a cluster already exist in the data folder?
+      ansible.builtin.stat:
+        path: "{{ postgres_data_dir }}/pgdata/PG_VERSION"
+      register: cluster
+
+    - name: Refuse to invent a new superuser password for an existing cluster
+      ansible.builtin.assert:
+        that: secret_present.rc == 0 or not cluster.stat.exists
+        fail_msg: >-
+          A database cluster already exists in the data folder but the Podman secret {{ superuser_secret }} is missing.
+          A new password would not match it. Nothing was changed. Do not delete anything; see docs/recovery.md.
+
+    # ---- folders -----------------------------------------------------------------------------------
+    - name: Create the data folder on /u01 (private to the service user)
+      ansible.builtin.file:
+        path: "{{ postgres_data_dir }}"
+        state: directory
+        mode: "0700"
+
+    - name: Create the folder for the nightly dumps (used from Phase U3)
+      ansible.builtin.file:
+        path: "{{ postgres_backup_dir }}"
+        state: directory
+        mode: "0750"
+
+    - name: Create the platform folders on the eMMC
+      ansible.builtin.file:
+        path: "{{ platform_home }}/{{ item }}"
+        state: directory
+        mode: "0700"
+      loop: ["", postgres]
+
+    - name: Make sure the user's quadlet folder exists
+      ansible.builtin.file:
+        path: "{{ quadlet_dir }}"
+        state: directory
+        mode: "0755"
+
+    # ---- the superuser password: generated here, on the server, never shown -------------------------
+    - name: Generate the superuser password into a Podman secret (only if missing)
+      ansible.builtin.shell: |
+        set -o pipefail
+        head -c 30 /dev/urandom | base64 | tr -d '/+=\n' | podman secret create {{ superuser_secret }} - >/dev/null
+      args:
+        executable: /bin/bash
+      when: secret_present.rc != 0 and not ansible_check_mode
+      no_log: true
+      changed_when: true
+
+    # ---- image -------------------------------------------------------------------------------------
+    - name: Is the pinned PostgreSQL image already on the server?
+      ansible.builtin.command: podman image exists {{ postgres_image }}
+      register: image_present
+      changed_when: false
+      failed_when: false
+
+    - name: Pull the pinned PostgreSQL image
+      ansible.builtin.command: podman pull --quiet {{ postgres_image }}
+      when: image_present.rc != 0 and not ansible_check_mode
+      changed_when: true
+
+    # ---- config and quadlet files ------------------------------------------------------------------
+    - name: Install pg_hba.conf (who may connect)
+      ansible.builtin.template:
+        src: pg_hba.conf.j2
+        dest: "{{ platform_home }}/postgres/pg_hba.conf"
+        mode: "0600"
+      register: hba
+
+    - name: Install the db network unit
+      ansible.builtin.template:
+        src: db.network.j2
+        dest: "{{ quadlet_dir }}/db.network"
+        mode: "0644"
+      register: network_unit
+
+    - name: Install the PostgreSQL unit
+      ansible.builtin.template:
+        src: postgres.container.j2
+        dest: "{{ quadlet_dir }}/postgres.container"
+        mode: "0644"
+      register: pg_unit
+
+    - name: Let systemd read the new unit files
+      ansible.builtin.systemd:
+        scope: user
+        daemon_reload: true
+      when: network_unit.changed or pg_unit.changed
+
+    # ---- run -----------------------------------------------------------------------------------------
+    - name: Restart PostgreSQL when its unit or pg_hba.conf changed while it was running
+      ansible.builtin.systemd:
+        scope: user
+        name: postgres.service
+        state: restarted
+      when: not ansible_check_mode and (pg_unit.changed or hba.changed) and was_active.rc == 0
+
+    - name: Make sure PostgreSQL is running
+      ansible.builtin.systemd:
+        scope: user
+        name: postgres.service
+        state: started
+      when: not ansible_check_mode
+
+    - name: Wait until PostgreSQL reports healthy (the first start creates the cluster and can take a minute)
+      ansible.builtin.command: podman inspect --format '{{ '{{' }}.State.Health.Status{{ '}}' }}' postgres
+      register: health
+      until: health.stdout == 'healthy'
+      retries: 30
+      delay: 5
+      changed_when: false
+      when: not ansible_check_mode
+
+    - name: Summary
+      ansible.builtin.debug:
+        msg: >-
+          PostgreSQL {{ postgres_image.split(':')[-1] }} is running and healthy on the db network, data in {{ postgres_data_dir }}.
+          It has no databases for the apps yet: make pg-create-app APP=partsdb

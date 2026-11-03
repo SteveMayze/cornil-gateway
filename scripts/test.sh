@@ -13,7 +13,7 @@ tmp=$(mktemp -d); trap 'kill $(jobs -p) 2>/dev/null; rm -rf "$tmp"' EXIT
 
 echo "1. Playbooks are well-formed"
 export ANSIBLE_CONFIG=ansible/ansible.cfg
-for p in deploy backup-caddy-data restore-caddy-data status root-cert bootstrap-ports cutover rollback-legacy render; do
+for p in deploy backup-caddy-data restore-caddy-data status root-cert bootstrap-ports cutover rollback-legacy render postgres-deploy postgres-status pg-create-app; do
   check "syntax-check $p.yml" "$VENV/ansible-playbook -i local/inventory.example.ini --syntax-check ansible/$p.yml"
 done
 
@@ -34,7 +34,7 @@ h = open('$tmp/std/portal/index.html').read()
 assert '<script' not in h.lower()
 assert not [u for u in re.findall(r'https?://[^\\s\\\"\\'<>)]+', h) if u != 'http://www.w3.org/2000/svg']
 \""
-check "every portal_apps path has a matching route in the Caddyfile" "python3 -I -c \"
+check "every portal_apps path has a matching route in the Caddyfile" "$VENV/python -I -c \"
 import sys, yaml
 apps = yaml.safe_load(open('ansible/group_vars/all.yml'))['portal_apps']
 cf = open('$tmp/std/Caddyfile').read()
@@ -52,6 +52,33 @@ check "unit: joins the gateway network" "grep -q '^Network=gateway.network' $Q"
 check "unit: Caddyfile mounted read-only as a directory" "grep -q ':/etc/caddy:ro' $Q"
 check "unit: no secrets or env files" "! grep -qiE 'secret|password|token|EnvironmentFile' $Q"
 check "unit: wanted by default.target (user systemd)" "grep -q 'WantedBy=default.target' $Q"
+
+echo "2b. PostgreSQL platform: rendered units (ADR 0005, 0006)"
+P=$tmp/std/postgres.container
+N=$tmp/std/db.network
+H=$tmp/std/pg_hba.conf
+check "postgres unit: no PublishPort (reachable only from the db network)" "[ -s $P ] && ! grep -qi 'PublishPort' $P"
+check "postgres unit: joins the db network" "grep -q '^Network=db.network' $P"
+check "db.network: NetworkName=db with a fixed subnet" "grep -q '^NetworkName=db\$' $N && grep -qE '^Subnet=[0-9.]+/[0-9]+\$' $N"
+check "postgres unit: image pinned to an exact tag, not latest" "grep -qE '^Image=.*postgres:[0-9]+\\.[0-9]+(-[a-z]+)?\$' $P && ! grep -qiE 'latest|postgres:[0-9]+\$' $P"
+check "postgres unit: mount guard (mountpoint check, retries, no start limit)" "grep -q '^ExecStartPre=/usr/bin/mountpoint -q /u01\$' $P && grep -q '^Restart=always' $P && grep -q '^StartLimitIntervalSec=0' $P"
+check "postgres unit: host data path is under /u01/data" "grep -qE '^Volume=/u01/data/postgres:/var/lib/postgresql/data\$' $P"
+check "postgres unit: PGDATA is a sub-folder of the mounted volume" "grep -q '^Environment=PGDATA=/var/lib/postgresql/data/[a-z]' $P"
+check "postgres unit: password only via Secret= (mount), file path only in Environment" "grep -q '^Secret=postgres-superuser-password,type=mount' $P && grep -q '^Environment=POSTGRES_PASSWORD_FILE=/run/secrets/' $P && ! grep -qE '^Environment=POSTGRES_PASSWORD=' $P"
+check "postgres unit: no password text anywhere in the rendered files (comments aside)" "! (grep -hvE '^#|^Secret=postgres-superuser-password,type=mount|^Environment=POSTGRES_PASSWORD_FILE=/run/secrets/postgres-superuser-password\$' $P $N $H | sed -e 's/password_encryption//g' | grep -qiE 'password|passwd|secret|token|trust')"
+check "postgres unit: hardening (read-only root, no new privileges, no capabilities)" "grep -q '^ReadOnly=true' $P && grep -q '^NoNewPrivileges=true' $P && grep -q '^DropCapability=ALL' $P && ! grep -q '^AddCapability' $P"
+check "postgres unit: durability stays on (fsync, synchronous_commit, full_page_writes)" "grep -q 'fsync=on' $P && grep -q 'synchronous_commit=on' $P && grep -q 'full_page_writes=on' $P && ! grep -qE '(fsync|synchronous_commit|full_page_writes)=off' $P"
+check "postgres unit: memory and pid limits, health check, stop timeout" "grep -q -- '--memory=' $P && grep -q -- '--pids-limit=' $P && grep -q '^HealthCmd=pg_isready' $P && grep -q '^StopTimeout=' $P && grep -q '^TimeoutStopSec=' $P"
+check "postgres unit: runs as the image's postgres user mapped to the service user" "grep -q '^UserNS=keep-id:uid=999,gid=999' $P && grep -q '^User=999:999' $P"
+check "pg_hba.conf: scram-sha-256 only from the db subnet, no trust, no catch-all" "grep -qE '^host +all +all +10\\.89\\.100\\.0/24 +scram-sha-256' $H && ! grep -qiE '(trust|md5|password) *\$' $H && ! grep -qE '0\\.0\\.0\\.0/0|::/0|[[:space:]]all[[:space:]]+(trust|md5)' $H"
+check "pg_hba.conf subnet equals the db.network subnet" "[ \"\$(sed -n 's/^Subnet=//p' $N)\" = \"\$(awk '/^host/{print \$4}' $H)\" ]"
+check "the deployed unit does not weaken the guard on Caddy (caddy unit unchanged: no mountpoint check)" "! grep -q mountpoint $Q"
+check "pg-create-app: contains no DROP or DELETE statements" "! grep -vE '^[[:space:]]*#' ansible/pg-create-app.yml | grep -qiE 'drop (database|role|user|table)|delete from|state: absent|rm -r|--delete'"
+check "pg-create-app: validates the app name and never sets a password on an existing role" "grep -q 'is match(' ansible/pg-create-app.yml && ! grep -qiE 'ALTER (ROLE|USER)' ansible/pg-create-app.yml"
+check "pg-create-app and postgres-deploy: secret tasks use no_log" "[ \"\$(grep -c 'no_log: true' ansible/pg-create-app.yml)\" -ge 2 ] && [ \"\$(grep -c 'no_log: true' ansible/postgres-deploy.yml)\" -ge 1 ]"
+check "postgres-deploy checks that /u01 is a mount point before writing" "grep -q 'mountpoint -q' ansible/postgres-deploy.yml"
+check "pg-create-app makes the role a non-superuser, revokes PUBLIC connect" "grep -q 'NOSUPERUSER' ansible/pg-create-app.yml && grep -q 'REVOKE ALL ON DATABASE' ansible/pg-create-app.yml"
+check "quadlet-dryrun script sends the postgres and db units too" "grep -q 'postgres.container' scripts/quadlet-dryrun.sh && grep -q 'db.network' scripts/quadlet-dryrun.sh"
 
 echo "3. Caddy runs the rendered Caddyfile (real Caddy, stand-in apps)"
 if ! command -v caddy >/dev/null; then
@@ -85,12 +112,12 @@ else
 fi
 
 echo "4. No sudo outside the labelled one-time steps"
-routine="deploy status backup-caddy-data restore-drill root-cert smoke check test render"
+routine="deploy status backup-caddy-data restore-drill root-cert smoke check test render pg-deploy pg-deploy-check pg-status pg-create-app"
 for t in $routine; do
   out=$(make -n "$t" 2>&1)
   if echo "$out" | grep -qE '(^|[[:space:]])(sudo|-K|--ask-become-pass|-b)([[:space:]]|$)|become'; then bad "make $t must not use sudo"; else ok "make $t uses no sudo"; fi
 done
-for p in deploy backup-caddy-data restore-caddy-data status root-cert render; do
+for p in deploy backup-caddy-data restore-caddy-data status root-cert render postgres-deploy postgres-status pg-create-app; do
   check "$p.yml has no become/sudo" "! grep -vE '^[[:space:]]*#' ansible/$p.yml | grep -qE 'become|sudo'"
 done
 for p in bootstrap-ports cutover rollback-legacy; do

@@ -8,6 +8,7 @@
   vars:
     render_dir: "{{ playbook_dir }}/../build"
     gateway_home: /home/example-user/cornil-gateway
+    platform_home: /home/example-user/cornil-platform
   tasks:
     - name: Make the output directory
       ansible.builtin.file: {path: "{{ render_dir }}", state: directory, mode: "0755"}
@@ -20,6 +21,9 @@
         - {src: Caddyfile.j2, dest: Caddyfile}
         - {src: gateway.network.j2, dest: gateway.network}
         - {src: caddy.container.j2, dest: caddy.container}
+        - {src: db.network.j2, dest: db.network}
+        - {src: postgres.container.j2, dest: postgres.container}
+        - {src: pg_hba.conf.j2, dest: pg_hba.conf}
     - name: Make the portal output directory
       ansible.builtin.file: {path: "{{ render_dir }}/portal", state: directory, mode: "0755"}
     - name: Render the portal page

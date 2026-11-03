@@ -57,7 +57,7 @@ No repo writes into another repo's files, units, folders or secrets on the serve
 /u01/apps/<app>/build/                    image build contexts (were ~/<app>/build)
 ```
 
-Stays on the eMMC, never on the removable disk: each app's `config/env` (Django secret key), the Podman image storage, and the Podman secrets.
+Stays on the eMMC, never on the removable disk: each app's `config/env` (Django secret key), the Podman image storage, and the Podman secrets. Image builds use `/u01` for temporary files.
 
 **Database.** Container `postgres` on the Podman network `db` (Quadlet file `db.network`, `NetworkName=db`). **Not published on the host**: reachable only from containers that join `db`, as host `postgres`, port 5432. Official `postgres` image pinned to an exact tag (major version decided in U0, default 17, which matches Debian 13's client tools). `scram-sha-256` only. One database and one login role per app: `partsdb` / `partsdb`, `taxtool` / `taxtool` (later `humbser`). A role is not a superuser, owns only its database, and `CONNECT` is revoked from `PUBLIC`.
 
@@ -65,7 +65,7 @@ Stays on the eMMC, never on the removable disk: each app's `config/env` (Django 
 
 **App settings contract.** If `DJANGO_DB_HOST` is unset the app uses SQLite exactly as today (development and tests unchanged). Otherwise PostgreSQL from `DJANGO_DB_HOST`, `DJANGO_DB_PORT` (default 5432), `DJANGO_DB_NAME`, `DJANGO_DB_USER`, `DJANGO_DB_PASSWORD`. Driver: `psycopg` 3, pinned.
 
-**Units.** Each app unit gets `Network=db.network` (in addition to `gateway.network`), starts after `postgres.service`, and carries the `/u01` guard decided in U0 (the starting assumption is `RequiresMountsFor=/u01`; U0 must prove it actually works in a rootless **user** unit, or choose the replacement).
+**Units.** Each app unit gets `Network=db.network` (in addition to `gateway.network`) and starts after `postgres.service`. The `/u01` guard, proven on the server in U0 (ADR 0006), goes in the unit's `[Service]` section: `ExecStartPre=/usr/bin/mountpoint -q /u01`, `Restart=on-failure`, `RestartSec=10`, `StartLimitIntervalSec=0`. `RequiresMountsFor=/u01` alone does not work in a user unit, because it only orders the start and never blocks it. Caddy does not carry the guard.
 
 **Not in the contract:** text ordering. PostgreSQL sorts text by locale rules, SQLite by bytes. Apps must not rely on database ordering for anything that is displayed or exported unless the ordering is explicit and tested. U0 records the cluster locale.
 

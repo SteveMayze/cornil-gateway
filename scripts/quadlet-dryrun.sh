@@ -7,5 +7,5 @@ host=$(awk '/^\[gateway\]/{f=1;next} /^\[/{f=0} f&&$1!~/^#/&&NF{for(i=1;i<=NF;i+
 make render >/dev/null
 d=$(ssh "$host" mktemp -d)
 trap 'ssh "$host" rm -rf "$d"' EXIT
-scp -q build/caddy.container build/gateway.network "$host:$d/"
+scp -q build/caddy.container build/gateway.network build/postgres.container build/db.network "$host:$d/"
 ssh "$host" "QUADLET_UNIT_DIRS=$d /usr/libexec/podman/quadlet -dryrun -user"

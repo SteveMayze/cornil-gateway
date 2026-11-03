@@ -1,0 +1,109 @@
+---
+# Adds one application to the shared PostgreSQL: a login role and a database, both named <app>, plus the Podman
+# secret <app>-db-password. Run: make pg-create-app APP=partsdb      (no sudo)
+#
+# Safe to repeat. It never changes an existing role's password, never drops or deletes anything, and the
+# password is generated on the server and travels only through pipes (never on a command line, never printed).
+- name: Create the role, database and password secret for one app
+  hosts: gateway
+  gather_facts: false
+  vars:
+    secret_name: "{{ app }}-db-password"
+  tasks:
+    - name: Check the app name (lower-case letters, digits, underscore; starts with a letter)
+      ansible.builtin.assert:
+        that:
+          - app is defined
+          - app is match('^[a-z][a-z0-9_]{1,30}$')
+        fail_msg: "Give APP=<name>, for example: make pg-create-app APP=partsdb (lower-case letters, digits and _ only)."
+      delegate_to: localhost
+      run_once: true
+
+    - name: Check PostgreSQL is running and healthy
+      ansible.builtin.command: podman inspect --format '{{ '{{' }}.State.Health.Status{{ '}}' }}' postgres
+      register: health
+      changed_when: false
+      check_mode: false
+      failed_when: health.stdout != 'healthy'
+
+    - name: Does the role exist?
+      ansible.builtin.command: >-
+        podman exec postgres psql -U postgres -d postgres -X -tA
+        -c "select 1 from pg_roles where rolname = '{{ app }}'"
+      register: role
+      changed_when: false
+      check_mode: false
+
+    - name: Does the database exist?
+      ansible.builtin.command: >-
+        podman exec postgres psql -U postgres -d postgres -X -tA
+        -c "select 1 from pg_database where datname = '{{ app }}'"
+      register: database
+      changed_when: false
+      check_mode: false
+
+    - name: Is the password secret already stored?
+      ansible.builtin.command: podman secret exists {{ secret_name }}
+      register: secret_present
+      changed_when: false
+      failed_when: false
+      check_mode: false
+
+    - name: Refuse to invent a password for a role that already exists
+      ansible.builtin.assert:
+        that: secret_present.rc == 0 or role.stdout | trim != '1'
+        fail_msg: >-
+          The role {{ app }} already exists but the Podman secret {{ secret_name }} is missing. A new password would
+          not match the role, and this playbook never changes an existing role's password. Nothing was changed. See docs/postgres.md.
+
+    - name: Generate the password into the Podman secret (only if missing)
+      ansible.builtin.shell: |
+        set -o pipefail
+        head -c 30 /dev/urandom | base64 | tr -d '/+=\n' | podman secret create {{ secret_name }} - >/dev/null
+      args:
+        executable: /bin/bash
+      when: secret_present.rc != 0
+      no_log: true
+      changed_when: true
+
+    - name: Create the login role (only if missing; the password is read from the secret and piped in)
+      ansible.builtin.shell: |
+        set -o pipefail
+        pw=$(podman secret inspect --showsecret --format '{{ '{{' }}.SecretData{{ '}}' }}' {{ secret_name }})
+        printf "CREATE ROLE %s LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION PASSWORD '%s';\n" '{{ app }}' "$pw" \
+          | podman exec -i postgres psql -U postgres -d postgres -X -q -v ON_ERROR_STOP=1
+      args:
+        executable: /bin/bash
+      when: role.stdout | trim != '1'
+      no_log: true
+      changed_when: true
+
+    - name: Create the database owned by the role (only if missing)
+      ansible.builtin.command: >-
+        podman exec postgres psql -U postgres -d postgres -X -q -v ON_ERROR_STOP=1
+        -c "CREATE DATABASE {{ app }} OWNER {{ app }} ENCODING 'UTF8'"
+      when: database.stdout | trim != '1'
+      changed_when: true
+
+    - name: Nobody but the owner may connect (revoke CONNECT from PUBLIC; harmless to repeat)
+      ansible.builtin.command: >-
+        podman exec postgres psql -U postgres -d postgres -X -q -v ON_ERROR_STOP=1
+        -c "REVOKE ALL ON DATABASE {{ app }} FROM PUBLIC"
+      changed_when: false
+
+    - name: Verify the role is an ordinary login (not a superuser) and owns the database
+      ansible.builtin.command: >-
+        podman exec postgres psql -U postgres -d postgres -X -tA -F ' '
+        -c "select r.rolsuper, r.rolcanlogin, pg_get_userbyid(d.datdba) = r.rolname
+            from pg_roles r, pg_database d where r.rolname = '{{ app }}' and d.datname = '{{ app }}'"
+      register: verify
+      changed_when: false
+      check_mode: false
+      failed_when: not ansible_check_mode and verify.stdout | trim != 'f t t'
+
+    - name: Summary
+      ansible.builtin.debug:
+        msg: >-
+          {{ app }}: role and database ready, password in the Podman secret {{ secret_name }}.
+          The app's unit reads it with Secret={{ secret_name }},type=env,target=DJANGO_DB_PASSWORD
+          and connects to host postgres, port 5432, database {{ app }}, user {{ app }}.

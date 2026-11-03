@@ -8,6 +8,8 @@ It serves two Django apps over HTTPS:
 
 No other repository may contain Caddy configuration or write to the proxy's files.
 
+Since ADR 0005 this repository also owns the **shared platform** on the server: the `db` network and one PostgreSQL container with a database and login per app (`docs/postgres.md`). Built in Phase U1 and not yet deployed.
+
 **Status:** live. The gateway serves both apps on ports 80 and 443. Closing the old plain-HTTP ports is described in `docs/closing-plain-ports.md`; recovery in `docs/recovery.md`.
 
 ## The portal page
@@ -45,5 +47,12 @@ Routine commands use SSH as the service user and never ask for the sudo password
     make restore-drill BACKUP=<name>       # prove a backup is usable (touches nothing live)
     make restore-caddy-data BACKUP=<name>  # replace the live CA data with a backup
     make check               # secret scan + tests (needs: brew install caddy gitleaks)
+
+PostgreSQL (no sudo; see `docs/postgres.md`):
+
+    make pg-deploy-check             # rehearse
+    make pg-deploy                   # install an empty PostgreSQL
+    make pg-status                   # read-only overview
+    make pg-create-app APP=<name>    # add an app's database, login and password secret
 
 Three targets marked `[SUDO]` (`bootstrap-ports`, `cutover`, `rollback-legacy`) ask for the sudo password; each playbook's first lines say exactly what it changes.

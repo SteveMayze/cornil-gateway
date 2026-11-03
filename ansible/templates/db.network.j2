@@ -1,0 +1,5 @@
+# Managed by cornil-gateway. A private rootless Podman network for the database. Only containers that join it
+# can reach `postgres` (as host `postgres`, port 5432). The subnet is fixed so pg_hba.conf can name it.
+[Network]
+NetworkName={{ db_network_name }}
+Subnet={{ db_subnet }}

@@ -50,3 +50,8 @@ Then install the new file on every device ([`trust-root-cert.md`](trust-root-cer
 
 ## 6. Backups: what and where
 `make backup-caddy-data` writes a dated archive into `~/cornil-gateway/backups/` on the server (mode 600; the newest 7 are kept). It contains the CA's **private key**: copy it only to your own encrypted storage, never into this repo. Nothing runs it automatically yet; run it after any CA change and whenever you like (monthly is sensible). If the server's disk dies, the only copy of the CA is the one you saved elsewhere.
+
+## 7. PostgreSQL (outline; filled in during phases U3 and U4)
+- **`/u01` is not mounted** (USB disk unplugged or failed): `postgres` and the app units refuse to start and keep retrying every 10 seconds; Caddy and the portal stay up. Plug the disk in, wait a minute, then `make pg-status`. Never create files in `/u01` while it is unmounted. *(Details: U3.)*
+- **Restoring a database from a nightly dump, the restore drill, and rebuilding onto a new disk from the offsite copy:** *(U3 and U4.)*
+- **The superuser secret is missing but the data exists:** `make pg-deploy` refuses and changes nothing. Do not delete anything. *(Details: U3.)*

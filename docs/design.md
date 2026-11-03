@@ -167,3 +167,9 @@ Internet-facing: nothing. Home network (LAN) sees only:  22 (SSH)   80, 443 (Cad
 - Tax upstream now by name (done, verified). parts-db's own redirects now carry `/parts-db/` (Part B works).
 - parts-db now rootless: `partsdb_upstream: parts-db-web:8000` (ADR 0003, 2026-11-01). The sections above on `host.containers.internal:8888` describe the earlier rootful route and the test behind ADR 0001; they are history.
 - Open: 8890 (tax request), 8889 (owner decommissions the rootful tax copy), 8891 (rootless parts-db publishes it; parts-db repo). 8888: closed, rootful parts-db stopped 2026-11-01.
+
+## 12. Shared platform: PostgreSQL (U1, not deployed)
+- Scope extended by ADR 0005; mount guard, locale and version by ADR 0006. Plain-language guide: `docs/postgres.md`.
+- Network `db` (`db.network`, fixed subnet in `group_vars/all.yml`), container `postgres` (rootless, no published port), data in `/u01/data/postgres`, settings file in `~/cornil-platform/postgres/` on the eMMC. Units: `~/.config/containers/systemd/{db.network,postgres.container}`.
+- Podman image storage and Podman secrets stay on the eMMC (ADR 0006). Caddy does not carry the `/u01` guard; PostgreSQL and the app units do.
+- Playbooks: `postgres-deploy.yml`, `postgres-status.yml`, `pg-create-app.yml`. Nothing is deployed until Phase U2.
