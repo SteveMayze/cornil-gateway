@@ -36,7 +36,7 @@ counts_in_dump "$dir/$dump" > "$tmpd/dump.counts"
 counts_in_db "$name" > "$tmpd/db.counts"
 tables=$(wc -l < "$tmpd/dump.counts" | tr -d ' ')
 if compare_counts "$tmpd/dump.counts" "$tmpd/db.counts"; then
-  echo "row counts match for $tables tables with data"
+  echo "row counts match for $tables tables"
   result=ok
 else
   result=bad
