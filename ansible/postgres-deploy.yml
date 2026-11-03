@@ -14,11 +14,13 @@
       ansible.builtin.command: loginctl show-user {{ ansible_facts['user_id'] }} --property=Linger --value
       register: linger
       changed_when: false
+      check_mode: false  # read-only, so the rehearsal checks the real server
       failed_when: linger.stdout != 'yes'
 
     - name: Check that /u01 is a real mounted disk, not the empty folder
       ansible.builtin.command: mountpoint -q {{ u01_mount }}
       changed_when: false
+      check_mode: false  # read-only, so the rehearsal checks the real server
       register: u01
       failed_when: false
 
@@ -33,12 +35,14 @@
       ansible.builtin.command: systemctl --user is-active postgres.service
       register: was_active
       changed_when: false
+      check_mode: false  # read-only, so the rehearsal checks the real server
       failed_when: false
 
     - name: Is the superuser secret already stored?
       ansible.builtin.command: podman secret exists {{ superuser_secret }}
       register: secret_present
       changed_when: false
+      check_mode: false  # read-only, so the rehearsal checks the real server
       failed_when: false
 
     - name: Does a cluster already exist in the data folder?
@@ -95,6 +99,7 @@
       ansible.builtin.command: podman image exists {{ postgres_image }}
       register: image_present
       changed_when: false
+      check_mode: false  # read-only, so the rehearsal checks the real server
       failed_when: false
 
     - name: Pull the pinned PostgreSQL image
