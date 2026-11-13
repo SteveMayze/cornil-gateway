@@ -139,6 +139,23 @@ check "drill: a failing restore still cleans up and fails" "STUB_RESTORE_FAILS=1
 check "drill: refuses a dump name with a path or from another database, before touching the database" "
   ! $TOOLS/pg-restore-drill.sh partsdb ../taxtool-20261103T021500Z.dump && ! $TOOLS/pg-restore-drill.sh partsdb taxtool-20261103T021500Z.dump && [ ! -s $STUB_LOG ]"
 check "drill: refuses a database name that is not an app name" "! $TOOLS/pg-restore-drill.sh 'x;drop' && ! $TOOLS/pg-restore-drill.sh '../x'"
+# A dump fetched from the offsite copy lives in another folder (the restore scratch folder).
+FETCHED="$T/restore-scratch/backup/u01/data/backups/postgres/partsdb"
+mkdir -p "$FETCHED"
+src=$(ls "$BACKUP_ROOT/partsdb" | grep -E '^partsdb-.*Z\.dump$' | head -1)
+cp "$BACKUP_ROOT/partsdb/$src" "$FETCHED/partsdb-20991231T000000Z.dump"
+: > "$STUB_LOG"
+out=$("$TOOLS/pg-restore-drill.sh" partsdb "" "$FETCHED/" 2>&1); rc=$?
+check "drill: with a dump folder, drills the newest dump from THAT folder (not the live one) and prints DRILL_OK" "
+  [ $rc -eq 0 ] && echo '$out' | grep -q 'DRILL_OK partsdb partsdb-20991231T000000Z.dump' && echo '$out' | grep -q 'not the live dump folder' &&
+  ! ls $BACKUP_ROOT/partsdb | grep -q 20991231"
+check "drill: with a dump folder, still creates and drops only a throw-away database" "
+  grep 'CREATE DATABASE' $STUB_LOG | grep -Eq 'drill_partsdb_[0-9]{8}t[0-9]{6}' && ! grep -E 'DROP DATABASE' $STUB_LOG | grep -Ev 'drill_partsdb_' | grep ."
+: > "$STUB_LOG"
+check "drill: refuses a relative, '..' or missing dump folder, before touching the database" "
+  ! $TOOLS/pg-restore-drill.sh partsdb '' restore-scratch && ! $TOOLS/pg-restore-drill.sh partsdb '' '$FETCHED/../../postgres' &&
+  ! $TOOLS/pg-restore-drill.sh partsdb '' '$T/does-not-exist' && [ ! -s $STUB_LOG ]"
+check "drill: the dump-name check still applies inside a dump folder" "! $TOOLS/pg-restore-drill.sh partsdb ../x.dump '$FETCHED' && ! $TOOLS/pg-restore-drill.sh partsdb taxtool-20261103T021500Z.dump '$FETCHED'"
 
 # ---- real restore --------------------------------------------------------------------------------------
 dump=$(ls "$BACKUP_ROOT/partsdb" | grep -E '^partsdb-.*Z\.dump$' | head -1)

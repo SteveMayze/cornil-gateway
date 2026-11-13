@@ -2,16 +2,26 @@
 # Proves that a dump can be restored, without touching the live database: restores it into a throw-away database
 # (named drill_<db>_<time>), compares the row count of every table with the dump's own contents, drops only that
 # throw-away database and prints DRILL_OK.   Run: make pg-restore-drill [DB=partsdb] [DUMP=partsdb-....dump]
+# FROM=scratch drills the dumps fetched from the offsite copy into ~/cornil-platform/restore-scratch
+# (docs/offsite-backup.md "Restoring") instead of the live dump folder.
 - name: PostgreSQL restore drill
   hosts: gateway
   gather_facts: true
   vars:
     platform_home: "{{ ansible_facts['user_dir'] }}/cornil-platform"
     drill_dbs: "{{ [db] if (db | default('')) != '' else ['partsdb', 'taxtool'] }}"
+    drill_from: "{{ from | default('') }}"
   tasks:
+    - name: Check FROM is empty or "scratch"
+      ansible.builtin.assert:
+        that: drill_from in ['', 'scratch']
+        fail_msg: FROM may only be "scratch" (the restore scratch folder), or left out for the live dump folder.
+
     - name: Run the drill for each database
       ansible.builtin.command:
-        argv: "{{ [platform_home ~ '/bin/pg-restore-drill.sh', item] + ([dump] if (dump | default('')) != '' else []) }}"
+        argv: >-
+          {{ [platform_home ~ '/bin/pg-restore-drill.sh', item, dump | default('')]
+             + ([platform_home ~ '/restore-scratch/backup' ~ postgres_backup_dir ~ '/' ~ item] if drill_from == 'scratch' else []) }}
       environment:
         BACKUP_ROOT: "{{ postgres_backup_dir }}"
       loop: "{{ drill_dbs }}"

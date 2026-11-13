@@ -9,6 +9,11 @@ After=pg-dump.service network-online.target
 
 [Service]
 Type=oneshot
+{% if restic_reachable_check | default('') | trim %}
+{% set reach = restic_reachable_check.split() %}
+# Skip quietly when the target is off (ADR 0007): exit 1 (nc) or 124 (timeout) means "condition not met", not "failed".
+ExecCondition=/usr/bin/timeout 15 /usr/bin/nc -z -w 5 {{ reach[0] }} {{ reach[1] }}
+{% endif %}
 # The mount guard (ADR 0006).
 ExecStartPre=/usr/bin/mountpoint -q {{ u01_mount }}
 ExecStartPre=/usr/bin/podman secret exists {{ restic_password_secret }}

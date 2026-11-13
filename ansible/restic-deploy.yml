@@ -21,6 +21,17 @@
       delegate_to: localhost
       run_once: true
 
+    - name: Check restic_reachable_check is empty or "<host> <port>"
+      ansible.builtin.assert:
+        that: >-
+          (restic_reachable_check | default('') | trim) == '' or
+          (restic_reachable_check is match('^\s*[A-Za-z0-9.-]+\s+[0-9]{1,5}\s*$'))
+        fail_msg: >-
+          restic_reachable_check must be empty or a host name and a port separated by a space,
+          for example "nas.example.invalid 22".
+      delegate_to: localhost
+      run_once: true
+
     - name: Check that every needed Podman secret exists (by name; values are never read)
       ansible.builtin.command: podman secret exists {{ item }}
       loop: "{{ needed_secrets }}"
@@ -57,8 +68,9 @@
         daemon_reload: true
       when: units.changed
 
-    - name: Summary (the timer is NOT enabled yet - initialise the repository and take the first backup in Phase U4)
+    - name: Summary (this playbook never enables or disables the timer)
       ansible.builtin.debug:
         msg: >-
-          Installed restic-backup.service and restic-backup.timer. Nothing was sent anywhere. Next (Phase U4):
-          initialise the repository, run the first backup, then enable the timer.
+          Installed restic-backup.service and restic-backup.timer. Nothing was sent anywhere, and the timer was left
+          as it was (enabled or not). For a new target: initialise the repository and run the first backup before
+          `systemctl --user enable --now restic-backup.timer` (docs/offsite-backup.md).
