@@ -1,6 +1,6 @@
 # Offsite backup target: Synology NAS over SFTP with a key (setup checklist)
 
-Status: **executed 2026-11-09, sections A to F and the first backup and timer of G.** Still open: G3 (restore proof) and G5 (records). Written for Phase U4 (ADR 0007). Companion to `docs/offsite-backup.md` (option A, "a NAS you own"). The corrections found during the run are worked into the steps and listed under "What the real run showed".
+Status: **executed 2026-11-09 (sections A to F, G1, G2, G4); G3 restore proof and G5 records done 2026-11-13.** Written for Phase U4 (ADR 0007). Companion to `docs/offsite-backup.md` (option A, "a NAS you own"). The corrections found during the run are worked into the steps and listed under "What the real run showed".
 
 Target: Synology DS218, DSM 7.2.2-72806 Update 8, network name `barnes.fritz.box`. Source: the home server `cornil.fritz.box`. Goal: `restic` (a container on cornil) logs in to the NAS **with a key, no password**, as a normal (non-admin) NAS user and writes only into one shared folder.
 
@@ -173,9 +173,9 @@ Then, one line at a time at the `sftp>` prompt:
 ### G. [Cornil] First backup, proof of restore, then switch the timer on (Phase U4 acceptance)
 - [ ] G1. `systemctl --user start restic-backup.service`, then `journalctl --user -u restic-backup.service -n 60 --no-pager`.
 - [ ] G2. Snapshots: the E3 command with `snapshots`; then with `check`.
-- [ ] G3. Restore one dump into a scratch folder (the real proof): run `mkdir -p "$HOME/cornil-platform/restore-scratch"`, then run the E3 command adding `-v "$HOME/cornil-platform/restore-scratch:/restore"` (writable, drop `--read-only` if restic needs temp space) and the arguments `restore latest --tag cornil --target /restore`. Then run the restore drill on the fetched dump as `docs/offsite-backup.md` ("Restoring") describes; the exact drill command on a fetched file is still to be written in U4.
-- [ ] G4. `systemctl --user enable --now restic-backup.timer` and `systemctl --user list-timers | grep restic`.
-- [ ] G5. Record in `docs/recovery.md` 7.8 and ADR 0007 (Phase U4 outcome): offsite target = this NAS, date, `check` result, restore proof. No secrets.
+- [x] G3. Restore into a scratch folder (the real proof). **Done 2026-11-13** with the tested commands now in `docs/offsite-backup.md` "Restoring" (`--read-only` could stay: restic needed no extra temp space): snapshot `e668bb49`, 55 files and folders, identical to the live ones (`diff -rq`). The drill on a fetched dump is `make pg-restore-drill FROM=scratch`.
+- [x] G4. `systemctl --user enable --now restic-backup.timer` and `systemctl --user list-timers | grep restic`. Done 2026-11-09. Since 2026-11-13 a slot with the NAS off is skipped, not failed (`restic_reachable_check`).
+- [x] G5. Recorded 2026-11-13 in `docs/recovery.md` 7.8 and ADR 0007 ("Phase U4 close-out"). No secrets.
 
 ## What the real run showed (2026-11-09 to 2026-11-13)
 - B1: port 22 open from cornil with the SFTP service on; no firewall change needed.

@@ -1,13 +1,19 @@
 # Offsite backup with restic
 
-Status: **live since 2026-11-09** on the owner's Synology NAS `barnes.fritz.box` over SFTP (option A below, but in the same home; see "What is running now"). The restore proof from the NAS is still owed. Decision record: ADR 0007. Setup record: `docs/offsite-backup-synology.md`.
+Status: **live since 2026-11-09** on the owner's Synology NAS `barnes.fritz.box` over SFTP (option A below, but in the same home; see "What is running now"). A restore from the NAS into a scratch folder was proven on 2026-11-13 ("Restoring" below). Decision record: ADR 0007. Setup record: `docs/offsite-backup-synology.md`.
 
 ## What is running now
 - **Where:** a restic repository in one shared folder of the NAS, reached over SFTP with a key. The NAS user is a normal user without a shell. Names are in `local/vars.yml` only.
 - **When:** three attempts a day, at 11:00, 14:00 and 17:00 (plus up to 30 minutes), because the NAS and the network are off most nights. This is the `restic_calendar` override in `local/vars.yml`; the repo default (04:30) would never find the NAS on.
 - **What:** `/u01/data/backups` (the database dumps) and `/u01/data/parts-db/backups`. The Tax tool's folder is added to `restic_backup_paths` when it exists.
 - **One snapshot per day is normal.** Each run saves a snapshot, then the clean-up keeps only the newest of the day.
-- **When the NAS is off** (night, holiday): the run cannot connect and ends as `failed`; the next slot tries again and nothing is lost or deleted (the retention counts days that have a snapshot). You see it with `systemctl --user --failed` and `journalctl --user -u restic-backup.service`. A quiet "skipped" instead of "failed" is planned (ADR 0007, open item 4).
+- **When the NAS is off** (night, holiday): the run is **skipped**, not failed (since 2026-11-13, ADR 0007). Before each run, a quick check asks whether anything answers on the NAS's SSH port (`restic_reachable_check: "barnes.fritz.box 22"` in `local/vars.yml`). If nothing answers within 5 seconds, systemd does not start the backup and does not count it as an error; the next slot tries again. Nothing is lost or deleted: the retention counts days that have a snapshot, so a holiday gap removes no old snapshot. What "skipped" looks like (real output from the test on 2026-11-13):
+  - `systemctl --user status restic-backup.service` shows `Active: inactive (dead) (Result: exec-condition)` and `Condition: start condition unmet`, plus a `Process: ... ExecCondition=... (code=exited, status=1/FAILURE)` line. That "FAILURE" belongs to the check only (it means "the NAS did not answer"); the backup itself is not failed.
+  - `journalctl --user -u restic-backup.service` shows `forward host lookup failed` or nothing from the check, then `Skipped due to 'exec-condition'` and `Condition check resulted in ... being skipped.`
+  - `systemctl --user --failed` stays empty.
+  - Because of `Wants=pg-dump.service` (kept by owner decision 2026-11-13), a fresh database dump is still taken first, even when the backup is skipped.
+  - If the NAS answers but the backup then fails (wrong password, full share, NAS closes the connection as on 2026-11-11), the run still ends as `failed`, as it should.
+  - To turn the check off, remove the line from `local/vars.yml` and run `make restic-deploy`.
 - **The limit you accepted:** the NAS stands in the same home as the server. This copy saves you from a dead disk or a mistake, not from fire or theft. For that, add one of the options B, C or D below later.
 - **How to look:** `systemctl --user list-timers | grep restic` (next run), `systemctl --user status restic-backup.service` (last result).
 
@@ -48,7 +54,39 @@ All four options work with the same restic setup; only the repository address (i
 - The password is the Podman secret `restic-repo-password`. Target credentials, if any, are further Podman secrets listed in `restic_extra_secrets`. Create each one with `make restic-secret NAME=<secret name>`: it opens an SSH session and asks for the value **on the server**, hidden. It refuses to overwrite an existing secret.
 - Your repository address goes into `local/vars.yml` (git-ignored); see `local/vars.example.yml` for fake examples. `make restic-deploy` refuses to run until it is set and all secrets exist.
 - The service backs up, then applies the retention rule with `forget --prune`. The repo default runs the timer nightly at 04:30, after the database dump, with `Persistent=true`; on this server `restic_calendar` in `local/vars.yml` overrides it to 11:00, 14:00 and 17:00 (see "What is running now").
-- `make restic-deploy` installs the units but **does not enable the timer** and sends nothing. The repository was initialised, the first backup taken and the timer enabled by the owner on 2026-11-09 (`systemctl --user enable --now restic-backup.timer`). A first restore into a scratch folder is still owed.
+- `make restic-deploy` installs the units but **does not enable the timer** and sends nothing. The repository was initialised, the first backup taken and the timer enabled by the owner on 2026-11-09 (`systemctl --user enable --now restic-backup.timer`). A first restore into a scratch folder was proven on 2026-11-13.
 
-## Restoring (rehearsed in U4)
-In outline: run the restic container with the same repository and password, `restic snapshots` to list, `restic restore <snapshot> --target <scratch folder>` to fetch files into a scratch folder, then run `make pg-restore-drill` on a fetched dump. The exact commands are written and tested in Phase U4 and then copied into `docs/recovery.md`.
+## Restoring (tested 2026-11-13, Phase U4)
+This fetches files from the NAS into a **scratch folder**, a throw-away folder that nothing else uses. It never writes into the live folders. The NAS must be on. Do not start it in the half hour after 11:00, 14:00 or 17:00: the scheduled run's clean-up locks the repository for a short while.
+
+1. [Cornil, as the service user] Set the names (your own NAS user and share; the same block as in `docs/offsite-backup-synology.md`):
+
+       NAS=barnes.fritz.box
+       NAS_USER=<your NAS user>
+       NAS_SHARE=<your share>
+       KEYDIR="$HOME/cornil-platform/restic-ssh"
+       SCRATCH="$HOME/cornil-platform/restore-scratch"
+       mkdir -p "$SCRATCH"
+
+2. Fetch the newest snapshot. This is the same locked-down container as the nightly job, plus one writable folder for the result. Paste it as one block; if a line arrives cut off, podman says `flag needs an argument` and nothing happens, so paste it again.
+
+       podman run --rm --name restic-restore-test --read-only --security-opt=no-new-privileges --cap-drop=all \
+         --memory=512m --pids-limit=100 \
+         --secret restic-repo-password,type=mount \
+         -e RESTIC_REPOSITORY="sftp:$NAS_USER@$NAS:/$NAS_SHARE/restic" -e RESTIC_PASSWORD_FILE=/run/secrets/restic-repo-password \
+         -e RESTIC_CACHE_DIR=/cache --tmpfs /tmp \
+         -v "$HOME/cornil-platform/restic-cache:/cache" \
+         -v "$KEYDIR:/root/.ssh:ro" \
+         -v "$SCRATCH:/restore" \
+         docker.io/restic/restic:0.19.1 restore latest --tag cornil --target /restore
+
+   Normal output (2026-11-13): `restoring snapshot e668bb49 of [/backup/u01/data/backups /backup/u01/data/parts-db/backups] at ... to /restore`, then `Summary: Restored 55 files/dirs (25.363 MiB) in 0:19`. The ssh "post-quantum" warning lines are harmless. To fetch an older state, replace `latest` with a snapshot ID; `snapshots` instead of `restore ...` lists them.
+   If restic reports `chown ... operation not permitted`: `--cap-drop=all` removes the right to change a file's owner. It did not happen here, because every backed-up file belongs to the service user (which is "root" inside the container). For a test only, add `--cap-add=CHOWN` after `--cap-drop=all`.
+3. Compare with the live folders (a rehearsal; skip on a dead disk):
+
+       diff -rq "$SCRATCH/backup/u01/data/backups" /u01/data/backups; echo "rc=$?"
+       diff -rq "$SCRATCH/backup/u01/data/parts-db/backups" /u01/data/parts-db/backups; echo "rc=$?"
+
+   **Pass:** no output, or only `Only in /u01/...` lines (files made after the snapshot); `Only in .../restore-scratch/...` is also fine (a file the normal retention removed since). **Failure:** any line with `differ`. On 2026-11-13 the only lines were three `Only in /u01/...` files from that night.
+4. Use the files: the fetched dumps are in `$SCRATCH/backup/u01/data/backups/postgres/<db>/`, the parts-db archives in `$SCRATCH/backup/u01/data/parts-db/backups/`. For a real recovery, follow `docs/recovery.md` 7.5. `make pg-restore-drill` only accepts a dump in the live dump folder, so it cannot drill a fetched file in place; the byte comparison in step 3 proves the fetched dump is identical to one that is drilled there.
+5. Empty the scratch folder afterwards: `rm -rf "$SCRATCH"/backup` (it holds a copy of your data).

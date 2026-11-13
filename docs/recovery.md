@@ -75,10 +75,10 @@ Use this when data was damaged or deleted. **Stop the app that uses the database
 Normal output ends with `RESTORE_OK`. If it stops earlier, the live database was not replaced; the message says what is left over.
 
 ### 7.5 The disk is dead: restoring onto a new disk from the offsite copy
-(**Not yet rehearsed.** An offsite copy exists since 2026-11-09 on the owner's NAS, see `docs/offsite-backup.md`; a restore from it has not been shown yet. The NAS is in the same home: if the home is lost, this copy is lost too.)
+(The fetch from the offsite copy (step 3) was **rehearsed on 2026-11-13** into a scratch folder: 55 files and folders, identical to the live ones. Steps 1, 2, 4 and 5 on a new disk have not been rehearsed. The offsite copy is on the owner's NAS, in the same home: if the home is lost, this copy is lost too.)
 1. Fit a new disk, format it ext4 with the label `u01` and mount it at `/u01` (same `fstab` line as before; administrator steps from the earlier setup).
 2. Recreate the folders: `make pg-deploy` (creates `/u01/data/postgres` and the dump folder, and starts an empty PostgreSQL; the superuser secret still exists on the eMMC).
-3. Fetch the newest dump of each database from the offsite repository into `/u01/data/backups/postgres/<db>/` (commands written in U4; you need the **restic password from your safe place**).
+3. Fetch the newest snapshot from the offsite repository with the tested commands in `docs/offsite-backup.md` "Restoring", steps 1 and 2 (the NAS must be on). The restic password is still the Podman secret on the eMMC; if the eMMC was lost too, recreate it first with `make restic-secret NAME=restic-repo-password`, typing the **copy from your safe place**, and set up a new NAS key (`docs/offsite-backup-synology.md` B to D). Then copy the newest dump of each database from `$SCRATCH/backup/u01/data/backups/postgres/<db>/` into `/u01/data/backups/postgres/<db>/` (keep the file names).
 4. `make pg-create-app APP=partsdb` and `APP=taxtool` only if the roles do not exist (they do not on an empty server); then `make pg-restore DB=… DUMP=…`.
 5. Restore each app's own archive into its folder as that app's repo describes, then start the apps.
 
@@ -94,10 +94,11 @@ Do this once every three months (January, April, July, October). It takes about 
 2. `make pg-backup-now`: every database prints `DUMP_OK`.
 3. `make pg-restore-drill`: every database prints `DRILL_OK` and "row counts match for N tables". `taxtool` shows 0 tables until that app is migrated; that is expected, not a failure.
 4. `make disk-status`: SMART overall result PASSED, no reallocated or pending sectors, no new USB resets or I/O errors (see `docs/disk-health.md`).
-5. **Offsite (on the NAS since 2026-11-09; switch the NAS on first):** `systemctl --user --failed` shows no restic unit and the last run of `restic-backup.service` succeeded; `restic check`; then restore one dump into a scratch folder and compare it with the live dump (`diff`), or run the drill on it once the tool accepts a folder. Also confirm you can still find your copy of the restic password outside the server. If the offsite step was not done, write "offsite not checked" in the log below; that is the most important line of the rehearsal.
+5. **Offsite (on the NAS since 2026-11-09; switch the NAS on first):** `systemctl --user --failed` shows no restic unit and the last run of `restic-backup.service` succeeded; `restic check`; then fetch the newest snapshot into the scratch folder and compare it with the live folders (`docs/offsite-backup.md` "Restoring", steps 1 to 3), run `make pg-restore-drill FROM=scratch` (every database prints `DRILL_OK`), and empty the scratch folder (step 5 there). A skipped run (`Result: exec-condition`) only means the NAS was off at that slot. Also confirm you can still find your copy of the restic password outside the server. If the offsite step was not done, write "offsite not checked" in the log below; that is the most important line of the rehearsal.
 6. Record the date and the result here (one line per rehearsal, no secrets):
 
 | Date | Result | Notes |
 |---|---|---|
 | 2026-11-08 | steps 1-3 ok (`DRILL_OK` both databases); steps 4-5 not possible yet | first run, Phase U4; no offsite target; disk health bootstrap pending |
 | 2026-11-13 | read-only check: nightly dump ok (02:17), restic timer 3 runs a day, 9 of 10 runs ok since 2026-11-09 (one NAS-side connection failure, recovered) | not a full rehearsal; offsite restore proof, password-copy confirmation and `make disk-status` still open |
+| 2026-11-13 | offsite restore proof: snapshot `e668bb49` from the NAS into the scratch folder, 55 files and folders, `diff -rq` no `differ`; `make pg-restore-drill FROM=scratch` `DRILL_OK` both; `make disk-status` SMART PASSED, 0 USB resets; restic password copy outside the server: yes | Phase U4 close-out; skip-when-NAS-off proven the same day; first full quarterly rehearsal due January 2027 |

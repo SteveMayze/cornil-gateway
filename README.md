@@ -60,6 +60,7 @@ Backups and disk health (see `docs/recovery.md` section 7; nightly dump deployed
     make pg-backup-deploy            # install the nightly PostgreSQL dump
     make pg-backup-now               # take a dump now
     make pg-restore-drill            # prove the newest dump restores (live data untouched)
+    make pg-restore-drill FROM=scratch   # the same, on dumps fetched from the NAS (docs/offsite-backup.md "Restoring")
     make pg-restore DB=<db> DUMP=<file>   # replace a database from a dump (asks for RESTORE)
     make restic-secret NAME=<name>   # create a Podman secret on the server from a hidden prompt there
     make restic-deploy               # install the offsite backup service and timer (schedule and target come from local/vars.yml)
