@@ -9,4 +9,5 @@
 #   - {secret: restic-s3-access-key, env: AWS_ACCESS_KEY_ID}
 #   - {secret: restic-s3-secret-key, env: AWS_SECRET_ACCESS_KEY}
 # restic_ssh_dir: /home/example-user/cornil-platform/restic-ssh           # SFTP only: holds the key and known_hosts
+# restic_reachable_check: "nas.example.invalid 22"                        # skip (not fail) a run when the target is off
 # disk_smart_long_test: true                                              # monthly SMART long self-test, if you approve it

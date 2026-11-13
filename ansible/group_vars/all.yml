@@ -107,6 +107,9 @@ restic_backup_paths:
 restic_extra_secrets: []
 # Folder on the server (eMMC) holding the SSH key and known_hosts for an SFTP target; leave empty if unused.
 restic_ssh_dir: ""
+# Optional "<host> <port>" of the target. When set, a run is SKIPPED (not failed) if nothing answers there within
+# 5 seconds, for a target that is often switched off (a NAS). Empty: no check, an unreachable target ends as failed.
+restic_reachable_check: ""
 
 # Disk health (docs/disk-health.md). The one-time sudo bootstrap installs a small root-owned job that writes a
 # status file the service user can read. The monthly long self-test is a proposal: off until the owner approves.

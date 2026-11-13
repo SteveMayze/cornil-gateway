@@ -65,8 +65,8 @@ pg-backup-deploy:  ## Install the nightly PostgreSQL dump (scripts, service, tim
 pg-backup-now:  ## Take a PostgreSQL dump right now and list the dumps
 	$(ANSIBLE) ansible/pg-backup-now.yml
 
-pg-restore-drill:  ## Prove the newest dump restores (into a throw-away database; live data untouched). Optional: DB=partsdb DUMP=...
-	$(ANSIBLE) ansible/pg-restore-drill.yml $(if $(DB),-e db=$(DB)) $(if $(DUMP),-e dump=$(DUMP))
+pg-restore-drill:  ## Prove the newest dump restores (into a throw-away database; live data untouched). Optional: DB=partsdb DUMP=... FROM=scratch
+	$(ANSIBLE) ansible/pg-restore-drill.yml $(if $(DB),-e db=$(DB)) $(if $(DUMP),-e dump=$(DUMP)) $(if $(FROM),-e from=$(FROM))
 
 pg-restore:  ## Replace a live database from a dump (asks you to type RESTORE; the old one is kept aside). make pg-restore DB=... DUMP=...
 	@test -n "$(DB)" -a -n "$(DUMP)" || { echo "Give DB=<database> DUMP=<dump file name>; list them with: make pg-status"; exit 1; }
