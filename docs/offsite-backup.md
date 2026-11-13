@@ -1,6 +1,15 @@
 # Offsite backup with restic
 
-Status: **built, not deployed** (Phase U3). Goes live in Phase U4. Decision record: ADR 0007.
+Status: **live since 2026-11-09** on the owner's Synology NAS `barnes.fritz.box` over SFTP (option A below, but in the same home; see "What is running now"). The restore proof from the NAS is still owed. Decision record: ADR 0007. Setup record: `docs/offsite-backup-synology.md`.
+
+## What is running now
+- **Where:** a restic repository in one shared folder of the NAS, reached over SFTP with a key. The NAS user is a normal user without a shell. Names are in `local/vars.yml` only.
+- **When:** three attempts a day, at 11:00, 14:00 and 17:00 (plus up to 30 minutes), because the NAS and the network are off most nights. This is the `restic_calendar` override in `local/vars.yml`; the repo default (04:30) would never find the NAS on.
+- **What:** `/u01/data/backups` (the database dumps) and `/u01/data/parts-db/backups`. The Tax tool's folder is added to `restic_backup_paths` when it exists.
+- **One snapshot per day is normal.** Each run saves a snapshot, then the clean-up keeps only the newest of the day.
+- **When the NAS is off** (night, holiday): the run cannot connect and ends as `failed`; the next slot tries again and nothing is lost or deleted (the retention counts days that have a snapshot). You see it with `systemctl --user --failed` and `journalctl --user -u restic-backup.service`. A quiet "skipped" instead of "failed" is planned (ADR 0007, open item 4).
+- **The limit you accepted:** the NAS stands in the same home as the server. This copy saves you from a dead disk or a mistake, not from fire or theft. For that, add one of the options B, C or D below later.
+- **How to look:** `systemctl --user list-timers | grep restic` (next run), `systemctl --user status restic-backup.service` (last result).
 
 ## Why you need a copy somewhere else
 Everything so far sits in one room: the database on `/u01`, its nightly dumps on `/u01`, the app backup archives on `/u01`. A fire, a theft, a power surge or a dead USB disk takes all of them at once. An **offsite** copy is a copy in another place (another house, or a company's data centre) that survives all of those.
@@ -38,8 +47,8 @@ All four options work with the same restic setup; only the repository address (i
 - `restic` runs as a container (`docker.io/restic/restic`, pinned to an exact version), started by a user service, so nothing is installed on the server and no sudo is needed. Files: `ansible/templates/restic-backup.service.j2` and `.timer.j2`, installed by `make restic-deploy`.
 - The password is the Podman secret `restic-repo-password`. Target credentials, if any, are further Podman secrets listed in `restic_extra_secrets`. Create each one with `make restic-secret NAME=<secret name>`: it opens an SSH session and asks for the value **on the server**, hidden. It refuses to overwrite an existing secret.
 - Your repository address goes into `local/vars.yml` (git-ignored); see `local/vars.example.yml` for fake examples. `make restic-deploy` refuses to run until it is set and all secrets exist.
-- The service backs up, then applies the retention rule with `forget --prune`. The timer runs nightly after the database dump, with `Persistent=true`.
-- `make restic-deploy` installs the units but **does not enable the timer** and sends nothing. Initialising the repository, the first backup and a first restore into a scratch folder are Phase U4.
+- The service backs up, then applies the retention rule with `forget --prune`. The repo default runs the timer nightly at 04:30, after the database dump, with `Persistent=true`; on this server `restic_calendar` in `local/vars.yml` overrides it to 11:00, 14:00 and 17:00 (see "What is running now").
+- `make restic-deploy` installs the units but **does not enable the timer** and sends nothing. The repository was initialised, the first backup taken and the timer enabled by the owner on 2026-11-09 (`systemctl --user enable --now restic-backup.timer`). A first restore into a scratch folder is still owed.
 
 ## Restoring (rehearsed in U4)
 In outline: run the restic container with the same repository and password, `restic snapshots` to list, `restic restore <snapshot> --target <scratch folder>` to fetch files into a scratch folder, then run `make pg-restore-drill` on a fetched dump. The exact commands are written and tested in Phase U4 and then copied into `docs/recovery.md`.
